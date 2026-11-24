@@ -51,13 +51,13 @@ function ContactBlock({ contact, color, dark, isClean }: { contact: Record<strin
 
   if (!hasInfo) {
     return (
-      <div className="space-y-2.5">
-        <p className={dark ? "text-xs text-white/60 leading-relaxed font-normal" : "text-xs text-slate-500 leading-relaxed font-medium"}>
+      <div className="space-y-2 sm:space-y-2.5">
+        <p className={dark ? "text-[11px] sm:text-xs text-white/60 leading-relaxed font-normal" : "text-[11px] sm:text-xs text-slate-500 leading-relaxed font-medium"}>
           Service client et assistance disponibles 7j/7 pour vos commandes et expéditions.
         </p>
-        <div className="flex items-center gap-2 pt-1">
+        <div className="flex items-center gap-2 pt-0.5 sm:pt-1">
           <span className="size-2 rounded-full bg-emerald-500 animate-pulse" />
-          <span className={dark ? "text-[11px] font-bold text-emerald-400 font-mono uppercase" : "text-[11px] font-bold text-emerald-700 font-mono uppercase"}>
+          <span className={dark ? "text-[10px] sm:text-[11px] font-bold text-emerald-400 font-mono uppercase" : "text-[10px] sm:text-[11px] font-bold text-emerald-700 font-mono uppercase"}>
             Support Disponible
           </span>
         </div>
@@ -66,29 +66,29 @@ function ContactBlock({ contact, color, dark, isClean }: { contact: Record<strin
   }
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-2 sm:space-y-3">
       {contact.phone && (
-        <a href={`tel:${contact.phone}`} className={`flex items-center gap-2.5 transition-colors ${textCls}`}>
-          <div className="size-6 rounded-lg bg-slate-100 flex items-center justify-center shrink-0">
-            <Phone className="size-3 shrink-0" style={{ color: iconColor }} />
+        <a href={`tel:${contact.phone}`} className={`flex items-center gap-2 sm:gap-2.5 transition-colors ${textCls}`}>
+          <div className="size-5 sm:size-6 rounded-lg bg-slate-100 flex items-center justify-center shrink-0">
+            <Phone className="size-2.5 sm:size-3 shrink-0" style={{ color: iconColor }} />
           </div>
-          <span>{contact.phone}</span>
+          <span className="text-[11px] sm:text-xs">{contact.phone}</span>
         </a>
       )}
       {contact.email && (
-        <a href={`mailto:${contact.email}`} className={`flex items-center gap-2.5 transition-colors ${textCls}`}>
-          <div className="size-6 rounded-lg bg-slate-100 flex items-center justify-center shrink-0">
-            <Mail className="size-3 shrink-0" style={{ color: iconColor }} />
+        <a href={`mailto:${contact.email}`} className={`flex items-center gap-2 sm:gap-2.5 transition-colors ${textCls}`}>
+          <div className="size-5 sm:size-6 rounded-lg bg-slate-100 flex items-center justify-center shrink-0">
+            <Mail className="size-2.5 sm:size-3 shrink-0" style={{ color: iconColor }} />
           </div>
-          <span className="truncate">{contact.email}</span>
+          <span className="truncate text-[11px] sm:text-xs">{contact.email}</span>
         </a>
       )}
       {contact.address && (
-        <p className={`flex items-start gap-2.5 ${textCls}`}>
-          <div className="size-6 rounded-lg bg-slate-100 flex items-center justify-center shrink-0 mt-0.5">
-            <MapPin className="size-3 shrink-0" style={{ color: iconColor }} />
+        <p className={`flex items-start gap-2 sm:gap-2.5 ${textCls}`}>
+          <div className="size-5 sm:size-6 rounded-lg bg-slate-100 flex items-center justify-center shrink-0 mt-0.5">
+            <MapPin className="size-2.5 sm:size-3 shrink-0" style={{ color: iconColor }} />
           </div>
-          <span>{contact.address}</span>
+          <span className="text-[11px] sm:text-xs">{contact.address}</span>
         </p>
       )}
     </div>
@@ -156,23 +156,23 @@ export function StorefrontFooter() {
         className="w-full bg-white border-t border-slate-200/80 text-slate-800"
         style={{ fontFamily: '"Plus Jakarta Sans", system-ui, -apple-system, sans-serif' }}
       >
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-12 sm:py-16">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-8 lg:gap-12">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-6 sm:py-10 lg:py-14">
+          <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-12 gap-x-6 sm:gap-x-8 gap-y-5 sm:gap-y-8 lg:gap-12">
             
-            {/* Store Brand & Presentation (5 cols) */}
-            <div className="lg:col-span-5 space-y-4">
-              <div className="flex items-center gap-3">
-                <div className="size-11 rounded-2xl bg-white border border-slate-200/80 p-1 flex items-center justify-center shrink-0 shadow-2xs">
+            {/* Store Brand & Presentation (Full width on mobile, 5 cols on lg) */}
+            <div className="col-span-2 lg:col-span-5 space-y-2.5 sm:space-y-4">
+              <div className="flex items-center gap-2.5 sm:gap-3">
+                <div className="size-9 sm:size-11 rounded-2xl bg-white border border-slate-200/80 p-1 flex items-center justify-center shrink-0 shadow-2xs">
                   {logoUrl ? (
                     <img src={logoUrl} alt={storeName} className="h-full w-full object-contain" />
                   ) : (
-                    <span className="text-sm font-black text-white size-full rounded-xl flex items-center justify-center uppercase" style={{ backgroundColor: primary }}>
+                    <span className="text-xs sm:text-sm font-black text-white size-full rounded-xl flex items-center justify-center uppercase" style={{ backgroundColor: primary }}>
                       {storeName.charAt(0)}
                     </span>
                   )}
                 </div>
                 <div>
-                  <h3 className="text-base font-extrabold uppercase tracking-tight text-slate-900">{storeName}</h3>
+                  <h3 className="text-sm sm:text-base font-extrabold uppercase tracking-tight text-slate-900">{storeName}</h3>
                   <div className="flex items-center gap-1.5 mt-0.5">
                     <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
                     <span className="text-[9px] font-black uppercase tracking-wider text-emerald-600 font-mono">Boutique Officielle</span>
@@ -180,25 +180,25 @@ export function StorefrontFooter() {
                 </div>
               </div>
 
-              <p className="text-xs text-slate-500 leading-relaxed font-medium max-w-sm">
+              <p className="text-[11px] sm:text-xs text-slate-500 leading-relaxed font-medium max-w-sm">
                 {tagline || "Votre vitrine e-commerce de référence. Produits certifiés, finitions soignées et service client réactif."}
               </p>
 
               {/* Social Links */}
-              <div className="pt-2">
+              <div className="pt-0.5 sm:pt-2">
                 <SocialLinks social={social} color={primary} />
               </div>
             </div>
 
-            {/* Catalog Collections (2 cols) */}
-            <div className="lg:col-span-2 space-y-3.5">
-              <h4 className="text-[11px] font-black uppercase tracking-widest text-slate-900">Collections</h4>
-              <ul className="space-y-2.5">
+            {/* Catalog Collections (Gauche / Left on mobile: col-span-1) */}
+            <div className="col-span-1 lg:col-span-2 space-y-2 sm:space-y-3.5">
+              <h4 className="text-[10px] sm:text-[11px] font-black uppercase tracking-widest text-slate-900">Collections</h4>
+              <ul className="space-y-1 sm:space-y-2">
                 {shopLinks.length > 0 ? shopLinks.map(l => (
                   <li key={l}>
                     <button 
                       onClick={() => { setSelectedCategory(l); setStorefrontView('shop'); }} 
-                      className="text-xs font-semibold text-slate-600 hover:text-[#4b7bec] transition-colors text-left cursor-pointer"
+                      className="text-[11px] sm:text-xs font-semibold text-slate-600 hover:text-[#4b7bec] transition-colors text-left cursor-pointer truncate max-w-full block"
                     >
                       {l}
                     </button>
@@ -207,7 +207,7 @@ export function StorefrontFooter() {
                 <li>
                   <button 
                     onClick={() => { setSelectedCategory(null); setStorefrontView('shop'); }} 
-                    className="text-xs font-bold text-[#4b7bec] hover:underline transition-colors text-left cursor-pointer inline-flex items-center gap-1"
+                    className="text-[11px] sm:text-xs font-bold text-[#4b7bec] hover:underline transition-colors text-left cursor-pointer inline-flex items-center gap-1"
                   >
                     Tout voir →
                   </button>
@@ -215,17 +215,17 @@ export function StorefrontFooter() {
               </ul>
             </div>
 
-            {/* Customer Service (2 cols) */}
-            <div className="lg:col-span-2 space-y-3.5">
-              <h4 className="text-[11px] font-black uppercase tracking-widest text-slate-900">Assistance</h4>
-              <ul className="space-y-2.5">
+            {/* Customer Service (Droite / Right on mobile: col-span-1) */}
+            <div className="col-span-1 lg:col-span-2 space-y-2 sm:space-y-3.5">
+              <h4 className="text-[10px] sm:text-[11px] font-black uppercase tracking-widest text-slate-900">Assistance</h4>
+              <ul className="space-y-1 sm:space-y-2">
                 {HELP_LINKS.map(l => (
                   <li key={l.label}>
                     <button 
                       onClick={() => handleHelpAction(l.label)} 
-                      className="w-full flex items-center gap-2 text-xs font-semibold text-slate-600 hover:text-slate-950 transition-colors text-left cursor-pointer"
+                      className="w-full flex items-center gap-1.5 sm:gap-2 text-[11px] sm:text-xs font-semibold text-slate-600 hover:text-slate-950 transition-colors text-left cursor-pointer"
                     >
-                      <l.icon className="size-3.5 text-slate-400 shrink-0" />
+                      <l.icon className="size-3 sm:size-3.5 text-slate-400 shrink-0" />
                       <span className="truncate">{l.label}</span>
                     </button>
                   </li>
@@ -233,21 +233,21 @@ export function StorefrontFooter() {
               </ul>
             </div>
 
-            {/* Contact Details (3 cols) */}
-            <div className="lg:col-span-3 space-y-3.5">
-              <h4 className="text-[11px] font-black uppercase tracking-widest text-slate-900">Coordonnées</h4>
+            {/* Contact Details (Full width on mobile: col-span-2, 3 cols on lg) */}
+            <div className="col-span-2 md:col-span-2 lg:col-span-3 space-y-2 sm:space-y-3.5 pt-3 sm:pt-0 border-t border-slate-100 sm:border-0">
+              <h4 className="text-[10px] sm:text-[11px] font-black uppercase tracking-widest text-slate-900">Coordonnées</h4>
               <ContactBlock contact={contact} color={primary} />
             </div>
 
           </div>
 
           {/* Bottom Bar - Clean, Minimalist & Balanced */}
-          <div className="mt-12 pt-6 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-4">
-            <p className="text-xs font-medium text-slate-400 text-center sm:text-left">
+          <div className="mt-6 sm:mt-10 lg:mt-12 pt-3.5 sm:pt-6 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-2.5 sm:gap-4">
+            <p className="text-[11px] sm:text-xs font-medium text-slate-400 text-center sm:text-left">
               {copyright}
             </p>
 
-            <div className="flex items-center gap-3 text-xs font-medium text-slate-400">
+            <div className="flex items-center gap-2 sm:gap-3 text-[10px] sm:text-xs font-medium text-slate-400 flex-wrap justify-center">
               <span>Paiement sécurisé</span>
               <span>•</span>
               <span>Vérification à la livraison</span>
@@ -307,26 +307,26 @@ export function StorefrontFooter() {
       className="w-full bg-[#0A0D14] text-white border-t border-slate-800/80" 
       style={{ fontFamily: '"Plus Jakarta Sans", system-ui, -apple-system, sans-serif' }}
     >
-      <div className="mx-auto max-w-[1600px] px-4 sm:px-8 lg:px-12 py-12 sm:py-16">
+      <div className="mx-auto max-w-[1600px] px-4 sm:px-8 lg:px-12 py-6 sm:py-10 lg:py-14">
         
         {/* Main Footer Cards Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-6 mb-12">
+        <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-12 gap-x-4 sm:gap-x-6 gap-y-4 sm:gap-y-6 mb-6 sm:mb-10 lg:mb-12">
           
-          {/* Store Brand Card (4 cols) */}
-          <div className="lg:col-span-4 bg-white/[0.04] rounded-2xl border border-white/10 p-6 flex flex-col justify-between space-y-5">
-            <div className="space-y-3.5">
-              <div className="flex items-center gap-3">
-                <div className="size-11 rounded-2xl bg-white/10 border border-white/10 p-1 flex items-center justify-center shrink-0">
+          {/* Store Brand Card (Full width on mobile, 4 cols on lg) */}
+          <div className="col-span-2 lg:col-span-4 bg-white/[0.04] rounded-2xl border border-white/10 p-4 sm:p-6 flex flex-col justify-between space-y-3.5 sm:space-y-5">
+            <div className="space-y-2.5 sm:space-y-3.5">
+              <div className="flex items-center gap-2.5 sm:gap-3">
+                <div className="size-9 sm:size-11 rounded-2xl bg-white/10 border border-white/10 p-1 flex items-center justify-center shrink-0">
                   {logoUrl ? (
                     <img src={logoUrl} alt={storeName} className="h-full w-full object-contain" />
                   ) : (
-                    <span className="text-sm font-black text-white size-full rounded-xl flex items-center justify-center uppercase" style={{ backgroundColor: primary }}>
+                    <span className="text-xs sm:text-sm font-black text-white size-full rounded-xl flex items-center justify-center uppercase" style={{ backgroundColor: primary }}>
                       {storeName.charAt(0)}
                     </span>
                   )}
                 </div>
                 <div>
-                  <h3 className="text-sm font-extrabold uppercase tracking-tight text-white">{storeName}</h3>
+                  <h3 className="text-sm sm:text-base font-extrabold uppercase tracking-tight text-white">{storeName}</h3>
                   <div className="flex items-center gap-1.5 mt-0.5">
                     <span className="size-1.5 rounded-full bg-emerald-400 animate-pulse" />
                     <span className="text-[9px] font-black uppercase tracking-wider text-emerald-400 font-mono">Boutique Officielle</span>
@@ -334,47 +334,47 @@ export function StorefrontFooter() {
                 </div>
               </div>
 
-              <p className="text-xs text-white/60 leading-relaxed font-medium">
+              <p className="text-[11px] sm:text-xs text-white/60 leading-relaxed font-medium">
                 {tagline || "Votre vitrine e-commerce de référence. Produits certifiés, finitions soignées et expédition rapide dans les 58 wilayas."}
               </p>
             </div>
 
             {/* Social Links */}
-            <div className="pt-3 border-t border-white/10 flex items-center justify-between">
+            <div className="pt-2 sm:pt-3 border-t border-white/10 flex items-center justify-between">
               <span className="text-[10px] font-black uppercase tracking-wider text-white/40">Réseaux</span>
               <SocialLinks social={social} color={primary} dark />
             </div>
           </div>
 
-          {/* Catalog Collections Card (3 cols) */}
-          <div className="lg:col-span-3 bg-white/[0.04] rounded-2xl border border-white/10 p-6 space-y-4">
-            <div className="flex items-center justify-between border-b border-white/10 pb-3">
-              <h4 className="text-[11px] font-bold uppercase tracking-wider text-white">Collections</h4>
+          {/* Catalog Collections Card (Gauche / Left on mobile: col-span-1, 3 cols on lg) */}
+          <div className="col-span-1 lg:col-span-3 bg-white/[0.04] rounded-2xl border border-white/10 p-3.5 sm:p-6 space-y-2.5 sm:space-y-4">
+            <div className="flex items-center justify-between border-b border-white/10 pb-2 sm:pb-3">
+              <h4 className="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-white">Collections</h4>
               <button 
                 onClick={() => { setSelectedCategory(null); setStorefrontView('shop'); }}
-                className="text-[10px] font-bold uppercase tracking-wider text-[#4b7bec] hover:underline cursor-pointer"
+                className="text-[9px] sm:text-[10px] font-bold uppercase tracking-wider text-[#4b7bec] hover:underline cursor-pointer"
               >
                 Tout voir
               </button>
             </div>
-            <ul className="space-y-2">
+            <ul className="space-y-1 sm:space-y-2">
               {shopLinks.length > 0 ? shopLinks.map(l => (
                 <li key={l}>
                   <button 
                     onClick={() => { setSelectedCategory(l); setStorefrontView('shop'); }} 
-                    className="w-full flex items-center justify-between py-1 text-xs font-semibold text-white/70 hover:text-white transition-colors group text-left cursor-pointer"
+                    className="w-full flex items-center justify-between py-0.5 sm:py-1 text-[11px] sm:text-xs font-semibold text-white/70 hover:text-white transition-colors group text-left cursor-pointer truncate"
                   >
-                    <span>{l}</span>
-                    <span className="text-white/30 group-hover:text-white transition-colors">›</span>
+                    <span className="truncate">{l}</span>
+                    <span className="text-white/30 group-hover:text-white transition-colors ml-1">›</span>
                   </button>
                 </li>
               )) : (
                 <li>
                   <button 
                     onClick={() => { setSelectedCategory(null); setStorefrontView('shop'); }} 
-                    className="w-full flex items-center justify-between py-1 text-xs font-semibold text-white/70 hover:text-white transition-colors group text-left cursor-pointer"
+                    className="w-full flex items-center justify-between py-0.5 sm:py-1 text-[11px] sm:text-xs font-semibold text-white/70 hover:text-white transition-colors group text-left cursor-pointer"
                   >
-                    <span>Voir le catalogue complet</span>
+                    <span>Catalogue</span>
                     <span className="text-white/30 group-hover:text-white transition-colors">›</span>
                   </button>
                 </li>
@@ -382,19 +382,19 @@ export function StorefrontFooter() {
             </ul>
           </div>
 
-          {/* Customer Service Card (2 cols) */}
-          <div className="lg:col-span-2 bg-white/[0.04] rounded-2xl border border-white/10 p-6 space-y-4">
-            <div className="border-b border-white/10 pb-3">
-              <h4 className="text-[11px] font-bold uppercase tracking-wider text-white">Assistance</h4>
+          {/* Customer Service Card (Droite / Right on mobile: col-span-1, 2 cols on lg) */}
+          <div className="col-span-1 lg:col-span-2 bg-white/[0.04] rounded-2xl border border-white/10 p-3.5 sm:p-6 space-y-2.5 sm:space-y-4">
+            <div className="border-b border-white/10 pb-2 sm:pb-3">
+              <h4 className="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-white">Assistance</h4>
             </div>
-            <ul className="space-y-2">
+            <ul className="space-y-1 sm:space-y-2">
               {HELP_LINKS.map(l => (
                 <li key={l.label}>
                   <button 
                     onClick={() => handleHelpAction(l.label)} 
-                    className="w-full flex items-center gap-2 py-1 text-xs font-semibold text-white/70 hover:text-white transition-colors text-left cursor-pointer"
+                    className="w-full flex items-center gap-1.5 sm:gap-2 py-0.5 sm:py-1 text-[11px] sm:text-xs font-semibold text-white/70 hover:text-white transition-colors text-left cursor-pointer"
                   >
-                    <l.icon className="size-3.5 text-white/40 shrink-0" />
+                    <l.icon className="size-3 sm:size-3.5 text-white/40 shrink-0" />
                     <span className="truncate">{l.label}</span>
                   </button>
                 </li>
@@ -402,10 +402,10 @@ export function StorefrontFooter() {
             </ul>
           </div>
 
-          {/* Contact Card (3 cols) */}
-          <div className="lg:col-span-3 bg-white/[0.04] rounded-2xl border border-white/10 p-6 space-y-4">
-            <div className="border-b border-white/10 pb-3">
-              <h4 className="text-[11px] font-bold uppercase tracking-wider text-white">Coordonnées</h4>
+          {/* Contact Card (Full width on mobile: col-span-2, 3 cols on lg) */}
+          <div className="col-span-2 md:col-span-2 lg:col-span-3 bg-white/[0.04] rounded-2xl border border-white/10 p-3.5 sm:p-6 space-y-2.5 sm:space-y-4">
+            <div className="border-b border-white/10 pb-2 sm:pb-3">
+              <h4 className="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-white">Coordonnées</h4>
             </div>
             <ContactBlock contact={contact} color={primary} dark />
           </div>
@@ -413,12 +413,12 @@ export function StorefrontFooter() {
         </div>
 
         {/* Bottom Bar */}
-        <div className="pt-6 border-t border-white/10 flex flex-col sm:flex-row items-center justify-between gap-4">
-          <p className="text-xs font-medium text-white/40 text-center sm:text-left">
+        <div className="pt-4 sm:pt-6 border-t border-white/10 flex flex-col sm:flex-row items-center justify-between gap-2.5 sm:gap-4">
+          <p className="text-[11px] sm:text-xs font-medium text-white/40 text-center sm:text-left">
             {copyright}
           </p>
 
-          <div className="flex items-center gap-3 text-xs font-medium text-white/40">
+          <div className="flex items-center gap-2 sm:gap-3 text-[10px] sm:text-xs font-medium text-white/40 flex-wrap justify-center">
             <span>Paiement sécurisé</span>
             <span>•</span>
             <span>Vérification à la livraison</span>
