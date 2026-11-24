@@ -386,7 +386,7 @@ function CleanHero({
                   initial={{ opacity: 0, scale: 0.98 }}
                   animate={{ opacity: 1, scale: 1 }}
                   transition={{ duration: 0.7 }}
-                  className="relative h-full w-full overflow-hidden rounded-[28px] shadow-xl border border-slate-200/80 bg-slate-100"
+                  className="relative h-full w-full overflow-hidden rounded-none shadow-xl border border-slate-200/90 bg-slate-100"
                 >
                   {isVideo ? (
                     <video 
@@ -404,15 +404,15 @@ function CleanHero({
                   
                   {/* Floating product card highlight */}
                   {products[0] && (
-                    <div className="absolute bottom-4 left-4 right-4 bg-white rounded-2xl p-3.5 border border-slate-200/90 shadow-xl flex items-center justify-between gap-3">
+                    <div className="absolute bottom-4 left-4 right-4 bg-white rounded-none p-3.5 border border-slate-200/90 shadow-xl flex items-center justify-between gap-3">
                       <div className="flex items-center gap-3 min-w-0">
                         {products[0].main_image && (
-                          <div className="size-11 rounded-xl bg-slate-100 overflow-hidden shrink-0 border border-slate-200/60">
+                          <div className="size-11 rounded-none bg-slate-100 overflow-hidden shrink-0 border border-slate-200/60">
                             <img src={products[0].main_image} alt={products[0].name} className="size-full object-cover" />
                           </div>
                         )}
                         <div className="min-w-0">
-                          <span className="px-2 py-0.5 rounded-md text-[9px] font-black uppercase bg-blue-50 text-[#4b7bec]">
+                          <span className="px-2 py-0.5 rounded-none text-[9px] font-black uppercase bg-blue-50 text-[#4b7bec]">
                             Produit Vedette
                           </span>
                           <p className="text-xs font-black text-slate-900 truncate mt-0.5">{products[0].name}</p>
@@ -420,7 +420,7 @@ function CleanHero({
                       </div>
                       <button
                         onClick={onShop}
-                        className="h-9 px-3.5 rounded-xl text-xs font-black text-white shrink-0 shadow-sm"
+                        className="h-9 px-3.5 rounded-none text-xs font-black text-white shrink-0 shadow-sm"
                         style={{ backgroundColor: primary }}
                       >
                         Voir
@@ -429,7 +429,7 @@ function CleanHero({
                   )}
                 </motion.div>
               ) : (
-                <div className="h-full w-full rounded-[28px] bg-white flex flex-col items-center justify-center border border-slate-200 shadow-sm p-8 text-center">
+                <div className="h-full w-full rounded-none bg-white flex flex-col items-center justify-center border border-slate-200 shadow-sm p-8 text-center">
                   <Package className="size-16 text-slate-300 stroke-[1.5] mb-3" />
                   <span className="text-xs font-bold text-slate-500">{store.name}</span>
                   <span className="text-[10px] text-slate-400 mt-1">Catalogue en ligne disponible</span>

@@ -171,7 +171,7 @@ export function HomeSections() {
         {loading ? (
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-6">
             {Array.from({ length: 4 }).map((_, i) => (
-              <div key={i} className="aspect-[4/5] bg-slate-100 animate-pulse rounded-2xl" />
+              <div key={i} className="aspect-square bg-slate-100 animate-pulse rounded-none border border-slate-200" />
             ))}
           </div>
         ) : featured.length > 0 ? (
@@ -194,9 +194,9 @@ export function HomeSections() {
         ) : (
           <div className={cn(
             "flex flex-col items-center justify-center gap-4 py-20 border border-dashed text-center",
-            tpl === 'clean' ? 'bg-slate-50/50 border-slate-200 rounded-[24px]' :
+            tpl === 'clean' ? 'bg-slate-50/50 border-slate-200 rounded-none' :
             tpl === 'luxe' ? 'bg-[#12172A] border-white/5 rounded-none' :
-            'bg-gray-50 border-gray-200 rounded-3xl'
+            'bg-gray-50 border-gray-200 rounded-none'
           )}>
             <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">
               {t('collectionComingSoon')}
@@ -256,9 +256,9 @@ export function HomeSections() {
               onClick={() => setStorefrontView('shop')}
               className={cn(
                 "inline-flex items-center gap-1.5 sm:gap-2 text-xs sm:text-[13px] font-bold uppercase tracking-wider transition-all duration-200 shrink-0 cursor-pointer",
-                tpl === 'clean' ? 'text-slate-700 hover:text-slate-950 bg-white border border-slate-200 px-3.5 py-1.5 sm:px-5 sm:py-2.5 rounded-full shadow-2xs hover:bg-slate-50 hover:border-slate-300 active:scale-95' :
-                tpl === 'luxe' ? 'text-white/40 border-white/10 hover:text-white' :
-                'text-white/70 hover:text-white'
+                tpl === 'clean' ? 'text-slate-700 hover:text-slate-950 bg-white border border-slate-300 px-3.5 py-1.5 sm:px-5 sm:py-2.5 rounded-none shadow-2xs hover:bg-slate-50 hover:border-slate-400 active:scale-95' :
+                tpl === 'luxe' ? 'text-white/40 border-white/10 hover:text-white rounded-none' :
+                'text-white/70 hover:text-white rounded-none'
               )}
             >
               <span>{t('viewCollection')}</span>
@@ -268,7 +268,7 @@ export function HomeSections() {
           {loading ? (
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-6">
               {Array.from({ length: 4 }).map((_, i) => (
-                <div key={i} className="aspect-[4/5] bg-slate-100 animate-pulse rounded-2xl" />
+                <div key={i} className="aspect-square bg-slate-100 animate-pulse rounded-none border border-slate-200" />
               ))}
             </div>
           ) : newArrivals.length > 0 ? (
@@ -291,9 +291,9 @@ export function HomeSections() {
           ) : (
             <div className={cn(
               "flex flex-col items-center justify-center gap-4 py-20 border border-dashed text-center",
-              tpl === 'clean' ? 'bg-slate-50/50 border-slate-200 rounded-[24px]' :
+              tpl === 'clean' ? 'bg-slate-50/50 border-slate-200 rounded-none' :
               tpl === 'luxe' ? 'bg-[#12172A] border-white/5 rounded-none' :
-              'bg-gray-50 border-gray-200 rounded-3xl'
+              'bg-gray-50 border-gray-200 rounded-none'
             )}>
               <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">
                 {t('collectionComingSoon')}

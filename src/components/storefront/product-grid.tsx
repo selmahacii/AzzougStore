@@ -280,12 +280,12 @@ function CleanGrid({ storeId, primary, setStorefrontView }: { storeId: string; p
           {d.loading ? (
             <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-4 2xl:grid-cols-5 gap-3.5 sm:gap-6">
               {Array.from({ length: 10 }).map((_, i) => (
-                <Skeleton key={i} className="aspect-[4/5] bg-white rounded-3xl border border-slate-100 shadow-2xs" />
+                <Skeleton key={i} className="aspect-square bg-white rounded-none border border-slate-200 shadow-2xs" />
               ))}
             </div>
           ) : d.products.length === 0 ? (
-            <div className="bg-white rounded-3xl border border-slate-200/80 p-10 sm:p-16 flex flex-col items-center justify-center gap-4 text-center shadow-2xs">
-              <div className="size-16 rounded-3xl bg-slate-100 text-slate-400 flex items-center justify-center">
+            <div className="bg-white rounded-none border border-slate-200/90 p-10 sm:p-16 flex flex-col items-center justify-center gap-4 text-center shadow-2xs">
+              <div className="size-16 rounded-none bg-slate-100 text-slate-400 flex items-center justify-center">
                 <Package className="size-8" />
               </div>
               <h3 className="text-lg font-extrabold text-slate-900">Aucun produit disponible</h3>
@@ -295,7 +295,7 @@ function CleanGrid({ storeId, primary, setStorefrontView }: { storeId: string; p
               {d.hasActiveFilters && (
                 <button 
                   onClick={() => { d.clearFilters(); setLocalMin(''); setLocalMax(''); }}
-                  className="mt-2 h-11 px-6 rounded-full text-xs font-bold uppercase tracking-wider text-white bg-slate-900 hover:bg-slate-800 transition-all cursor-pointer shadow-xs active:scale-95"
+                  className="mt-2 h-11 px-6 rounded-none text-xs font-bold uppercase tracking-wider text-white bg-slate-900 hover:bg-slate-800 transition-all cursor-pointer shadow-xs active:scale-95"
                 >
                   Effacer les filtres
                 </button>

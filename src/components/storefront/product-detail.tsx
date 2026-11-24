@@ -380,12 +380,12 @@ function CleanDetail() {
   if (d.loading) return (
     <div className="bg-[#F8F9FC] min-h-screen py-10 sm:py-16">
       <div className="mx-auto max-w-[1400px] px-4 sm:px-8">
-        <div className="bg-white rounded-2xl sm:rounded-[32px] border border-slate-100 p-6 sm:p-10 shadow-sm">
+        <div className="bg-white rounded-none border border-slate-200 p-6 sm:p-10 shadow-sm">
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 lg:gap-14">
             <div className="lg:col-span-6 space-y-4">
-              <Skeleton className="aspect-square w-full rounded-2xl sm:rounded-[24px] bg-slate-100" />
+              <Skeleton className="aspect-square w-full rounded-none border border-slate-200 bg-slate-100" />
               <div className="flex gap-3 overflow-hidden">
-                {[0, 1, 2, 3, 4].map(i => <Skeleton key={i} className="size-16 sm:size-20 rounded-xl shrink-0 bg-slate-100" />)}
+                {[0, 1, 2, 3, 4].map(i => <Skeleton key={i} className="size-16 sm:size-20 rounded-none border border-slate-200 shrink-0 bg-slate-100" />)}
               </div>
             </div>
             <div className="lg:col-span-6 space-y-6">
@@ -689,13 +689,13 @@ function CleanDetail() {
 
         {/* Technical Specifications */}
         {(p as any).attributes && Object.keys((p as any).attributes).length > 0 && (
-          <div className="bg-white rounded-[24px] sm:rounded-[32px] border border-slate-200/80 p-5 sm:p-8 lg:p-10 shadow-2xs space-y-6">
+          <div className="bg-white rounded-none border border-slate-200/90 p-5 sm:p-8 lg:p-10 shadow-2xs space-y-6">
             <h2 className="text-lg sm:text-xl font-black text-slate-900 uppercase tracking-tight">
               {t('specification')}
             </h2>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-4xl">
               {Object.entries((p as any).attributes as Record<string, string>).map(([key, val]) => (
-                <div key={key} className="flex items-center justify-between p-3.5 rounded-xl bg-slate-50/70 border border-slate-100 text-xs">
+                <div key={key} className="flex items-center justify-between p-3.5 rounded-none bg-slate-50/70 border border-slate-200 text-xs">
                   <span className="font-bold text-slate-400 uppercase tracking-wider">{key}</span>
                   <span className="font-black text-slate-800">{val}</span>
                 </div>
