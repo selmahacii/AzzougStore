@@ -478,7 +478,7 @@ function CleanDetail() {
                 )}
                 
                 {d.discount > 0 && (
-                  <div className="absolute top-3.5 start-3.5 bg-[#111827] text-white text-[11px] font-black uppercase px-3 py-1 rounded-full shadow-2xs">
+                  <div className="absolute top-3.5 start-3.5 bg-red-600 text-white text-[11px] sm:text-xs font-black uppercase px-3 py-1 rounded-full shadow-md border border-red-500/40">
                     -{d.discount}%
                   </div>
                 )}
