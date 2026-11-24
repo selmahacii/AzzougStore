@@ -173,18 +173,6 @@ function CleanCard({ product, primary, onQuickView, onAddToCart }: {
           />
         )}
 
-        {/* Wishlist circular button */}
-        <button
-          onClick={e => { 
-            e.stopPropagation(); 
-            toggleWishlist(product.id); 
-            toast.success(isInWishlist ? 'Retiré des favoris' : 'Ajouté aux favoris'); 
-          }}
-          className="absolute top-2.5 right-2.5 sm:top-3 sm:right-3 z-20 size-8 sm:size-9 rounded-full bg-white/95 backdrop-blur-md flex items-center justify-center shadow-md border border-slate-100 hover:scale-110 active:scale-95 transition-all cursor-pointer"
-        >
-          <Heart className={cn("size-3.5 sm:size-4 transition-colors", isInWishlist ? "fill-rose-500 text-rose-500" : "text-slate-400")} />
-        </button>
-
         {/* Badges - Highly visible vibrant red pill badge for discount */}
         <div className="absolute top-2.5 left-2.5 sm:top-3 sm:left-3 z-20 flex flex-col gap-1">
           {discount > 0 ? (
@@ -213,9 +201,6 @@ function CleanCard({ product, primary, onQuickView, onAddToCart }: {
       {/* Info Block */}
       <div className="p-3.5 sm:p-4.5 flex-1 flex flex-col justify-between space-y-2.5 sm:space-y-3">
         <div className="space-y-1">
-          {product.category && (
-            <p className="text-[10px] sm:text-[11px] font-extrabold uppercase tracking-wider text-slate-400 truncate">{product.category}</p>
-          )}
           <h3 className="text-xs sm:text-base font-extrabold text-slate-900 leading-snug line-clamp-2 group-hover:text-[#4b7bec] transition-colors tracking-tight">
             {product.name}
           </h3>
@@ -380,15 +365,6 @@ function LuxeCard({ product, primary, onQuickView, onAddToCart }: {
         {/* Gold border reveal on hover */}
         <div className="absolute inset-0 border-2 opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none"
           style={{ borderColor: `${primary}40` }} />
-
-        {/* Wishlist */}
-        <button
-          onClick={e => { e.stopPropagation(); toggleWishlist(product.id); toast.success(isInWishlist ? 'Retiré' : 'Ajouté aux favoris'); }}
-          className="absolute top-4 right-4 z-20 size-8 rounded-full border flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all duration-300"
-          style={{ borderColor: `${primary}30`, backgroundColor: 'rgba(12,15,26,0.7)' }}
-        >
-          <Heart className={`size-3.5 transition-colors ${isInWishlist ? 'fill-current' : ''}`} style={{ color: primary }} />
-        </button>
 
         {/* Discount — thin elegant */}
         {discount > 0 && (

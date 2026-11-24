@@ -307,15 +307,6 @@ export function StorefrontHeader() {
               <Search className="size-4.5" />
             </button>
 
-            {/* Wishlist (Desktop only) */}
-            <button
-              onClick={() => handleNav('shop')}
-              className="hidden lg:flex size-10 rounded-full items-center justify-center hover:bg-slate-100/90 text-slate-700 hover:text-slate-900 transition-colors cursor-pointer"
-              title={t('wishlist')}
-            >
-              <Heart className="size-4.5" />
-            </button>
-
             {/* Cart (Visible on Mobile) */}
             <button
               onClick={toggleCart}

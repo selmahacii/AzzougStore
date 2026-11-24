@@ -651,20 +651,6 @@ function CleanDetail() {
                         <Plus className="size-3.5" />
                       </button>
                     </div>
-
-                    <button 
-                      type="button" 
-                      onClick={d.handleToggleWishlist} 
-                      className={cn(
-                        "size-11 rounded-full border flex items-center justify-center transition-all active:scale-95 shadow-2xs cursor-pointer",
-                        wishlisted 
-                          ? "border-rose-200 bg-rose-50 text-rose-500" 
-                          : "border-slate-200 bg-white text-slate-400 hover:text-slate-600 hover:border-slate-300"
-                      )}
-                      title="Ajouter aux favoris"
-                    >
-                      <Heart className="size-4.5" fill={wishlisted ? 'currentColor' : 'none'} />
-                    </button>
                   </div>
 
                   {/* Dual CTA Buttons */}
