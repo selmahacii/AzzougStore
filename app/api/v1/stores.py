@@ -89,6 +89,20 @@ def _enrich_store_with_counts(db: Session, store: Store) -> dict:
         "products": products_count,
         "employees": employees_count
     }
+
+    # Populate contact from theme_config for frontend consumers
+    theme_cfg = store_dict.get("theme_config") or {}
+    if isinstance(theme_cfg, str):
+        import json
+        try:
+            theme_cfg = json.loads(theme_cfg)
+        except Exception:
+            theme_cfg = {}
+    if isinstance(theme_cfg, dict):
+        store_dict["contact"] = theme_cfg.get("contact") or {}
+    else:
+        store_dict["contact"] = {}
+
     return store_dict
 
 
@@ -199,6 +213,11 @@ def create_store(
     # Merge template + custom config
     template_config = STORE_TEMPLATES.get(store_in.template_id or "modern", STORE_TEMPLATES["modern"]).copy()
     final_theme_config = {**template_config, **(store_in.theme_config or {})}
+
+    # Sync contact into theme_config
+    contact_data = store_in.contact or (store_in.theme_config.get("contact") if store_in.theme_config else None)
+    if contact_data and isinstance(contact_data, dict):
+        final_theme_config["contact"] = {**(final_theme_config.get("contact") or {}), **contact_data}
 
     store_dict = store_in.model_dump(exclude={"contact"})
     store_dict["theme_config"] = final_theme_config
@@ -439,6 +458,19 @@ def update_store(
                 current_theme = {}
         update_data["theme_config"] = {**current_theme, **update_data["theme_config"]}
 
+    # Ensure contact is properly persisted into theme_config
+    contact_val = update_data.pop("contact", None)
+    if contact_val and isinstance(contact_val, dict):
+        current_theme = update_data.get("theme_config") or store.theme_config or {}
+        if isinstance(current_theme, str):
+            import json
+            try:
+                current_theme = json.loads(current_theme)
+            except Exception:
+                current_theme = {}
+        current_theme["contact"] = {**(current_theme.get("contact") or {}), **contact_val}
+        update_data["theme_config"] = current_theme
+
     # Ensure social_links is a dict if it exists in update_data
     if "social_links" in update_data and isinstance(update_data["social_links"], str):
         import json
@@ -450,8 +482,10 @@ def update_store(
     # Record audit log before
     before_dict = {c.name: getattr(store, c.name) for c in store.__table__.columns}
 
+    valid_columns = {c.name for c in store.__table__.columns}
     for field, value in update_data.items():
-        setattr(store, field, value)
+        if field in valid_columns:
+            setattr(store, field, value)
 
     db.flush()
     after_dict = {c.name: getattr(store, c.name) for c in store.__table__.columns}

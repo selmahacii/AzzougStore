@@ -376,26 +376,6 @@ export function StorefrontHeader() {
             )}
           </AnimatePresence>
         </div>
-
-        {/* ─── Trust bar below nav (desktop only) ─ only shown if configured in theme_config ─── */}
-        {T.tpl === 'clean' && (() => {
-          const rawTrustBar = activeStore?.theme_config?.trustBar as Array<{label: string; sub: string; icon?: string}> | undefined;
-          if (!rawTrustBar || rawTrustBar.length === 0) return null;
-          return (
-            <div className="hidden lg:block border-t" style={{ borderColor: T.border }}>
-              <div className="max-w-[1800px] mx-auto px-16 py-2.5 flex items-center justify-center gap-12">
-                {rawTrustBar.map(({ label, sub }) => (
-                  <div key={label} className="flex items-center gap-2">
-                    <span className="size-3.5 shrink-0 rounded-full inline-block" style={{ backgroundColor: T.primary }} />
-                    <span className="text-[10px] font-bold text-gray-500">
-                      <span className="font-black text-gray-800">{label}</span> · {sub}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          );
-        })()}
       </motion.header>
 
       {/* ─── Mobile Menu Drawer (Meta Ads Template) ─── */}
