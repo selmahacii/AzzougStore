@@ -153,62 +153,14 @@ export function StorefrontFooter() {
   if (tpl === 'clean') {
     return (
       <footer 
-        className="w-full bg-white border-t border-slate-200/90 text-slate-800"
+        className="w-full bg-white border-t border-slate-200/80 text-slate-800"
         style={{ fontFamily: '"Plus Jakarta Sans", system-ui, -apple-system, sans-serif' }}
       >
-        {/* Reassurance Header Banner */}
-        <div className="border-b border-slate-100 bg-slate-50/70">
-          <div className="mx-auto max-w-[1600px] px-4 sm:px-8 lg:px-12 py-5 sm:py-6">
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 sm:gap-6">
-              <div className="flex items-center gap-3">
-                <div className="size-10 rounded-xl bg-blue-50 border border-blue-100 flex items-center justify-center shrink-0">
-                  <Truck className="size-4 text-[#4b7bec]" />
-                </div>
-                <div>
-                  <p className="text-xs font-black text-slate-900 tracking-tight">Livraison 58 Wilayas</p>
-                  <p className="text-[11px] text-slate-500 font-medium">À domicile ou au bureau</p>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-3">
-                <div className="size-10 rounded-xl bg-emerald-50 border border-emerald-100 flex items-center justify-center shrink-0">
-                  <ShieldCheck className="size-4 text-emerald-600" />
-                </div>
-                <div>
-                  <p className="text-xs font-black text-slate-900 tracking-tight">Paiement à la Livraison</p>
-                  <p className="text-[11px] text-slate-500 font-medium">Inspectez avant de payer</p>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-3">
-                <div className="size-10 rounded-xl bg-amber-50 border border-amber-100 flex items-center justify-center shrink-0">
-                  <RotateCcw className="size-4 text-amber-600" />
-                </div>
-                <div>
-                  <p className="text-xs font-black text-slate-900 tracking-tight">Garantie Satisfait</p>
-                  <p className="text-[11px] text-slate-500 font-medium">Échange & retour facilités</p>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-3">
-                <div className="size-10 rounded-xl bg-purple-50 border border-purple-100 flex items-center justify-center shrink-0">
-                  <HelpCircle className="size-4 text-purple-600" />
-                </div>
-                <div>
-                  <p className="text-xs font-black text-slate-900 tracking-tight">Service Client 7j/7</p>
-                  <p className="text-[11px] text-slate-500 font-medium">Assistance & conseils</p>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Main Footer Links & Info Grid */}
-        <div className="mx-auto max-w-[1600px] px-4 sm:px-8 lg:px-12 py-12 sm:py-16">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-12 sm:py-16">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-8 lg:gap-12">
             
-            {/* Store Brand & Presentation (4 cols) */}
-            <div className="lg:col-span-4 space-y-4">
+            {/* Store Brand & Presentation (5 cols) */}
+            <div className="lg:col-span-5 space-y-4">
               <div className="flex items-center gap-3">
                 <div className="size-11 rounded-2xl bg-white border border-slate-200/80 p-1 flex items-center justify-center shrink-0 shadow-2xs">
                   {logoUrl ? (
@@ -229,7 +181,7 @@ export function StorefrontFooter() {
               </div>
 
               <p className="text-xs text-slate-500 leading-relaxed font-medium max-w-sm">
-                {tagline || "Votre vitrine e-commerce de référence. Produits certifiés, finitions soignées et expédition rapide dans les 58 wilayas."}
+                {tagline || "Votre vitrine e-commerce de référence. Produits certifiés, finitions soignées et service client réactif."}
               </p>
 
               {/* Social Links */}
@@ -238,44 +190,33 @@ export function StorefrontFooter() {
               </div>
             </div>
 
-            {/* Catalog Collections (3 cols) */}
-            <div className="lg:col-span-3 space-y-4">
-              <div className="flex items-center justify-between">
-                <h4 className="text-[11px] font-black uppercase tracking-widest text-slate-900">Collections</h4>
-                <button 
-                  onClick={() => { setSelectedCategory(null); setStorefrontView('shop'); }}
-                  className="text-[10px] font-bold uppercase tracking-wider text-[#4b7bec] hover:underline cursor-pointer"
-                >
-                  Tout voir
-                </button>
-              </div>
+            {/* Catalog Collections (2 cols) */}
+            <div className="lg:col-span-2 space-y-3.5">
+              <h4 className="text-[11px] font-black uppercase tracking-widest text-slate-900">Collections</h4>
               <ul className="space-y-2.5">
                 {shopLinks.length > 0 ? shopLinks.map(l => (
                   <li key={l}>
                     <button 
                       onClick={() => { setSelectedCategory(l); setStorefrontView('shop'); }} 
-                      className="w-full flex items-center justify-between text-xs font-semibold text-slate-600 hover:text-[#4b7bec] transition-colors group text-left cursor-pointer"
+                      className="text-xs font-semibold text-slate-600 hover:text-[#4b7bec] transition-colors text-left cursor-pointer"
                     >
-                      <span>{l}</span>
-                      <span className="text-slate-300 group-hover:text-[#4b7bec] transition-colors">›</span>
+                      {l}
                     </button>
                   </li>
-                )) : (
-                  <li>
-                    <button 
-                      onClick={() => { setSelectedCategory(null); setStorefrontView('shop'); }} 
-                      className="w-full flex items-center justify-between text-xs font-semibold text-slate-600 hover:text-[#4b7bec] transition-colors group text-left cursor-pointer"
-                    >
-                      <span>Voir le catalogue complet</span>
-                      <span className="text-slate-300 group-hover:text-[#4b7bec] transition-colors">›</span>
-                    </button>
-                  </li>
-                )}
+                )) : null}
+                <li>
+                  <button 
+                    onClick={() => { setSelectedCategory(null); setStorefrontView('shop'); }} 
+                    className="text-xs font-bold text-[#4b7bec] hover:underline transition-colors text-left cursor-pointer inline-flex items-center gap-1"
+                  >
+                    Tout voir →
+                  </button>
+                </li>
               </ul>
             </div>
 
             {/* Customer Service (2 cols) */}
-            <div className="lg:col-span-2 space-y-4">
+            <div className="lg:col-span-2 space-y-3.5">
               <h4 className="text-[11px] font-black uppercase tracking-widest text-slate-900">Assistance</h4>
               <ul className="space-y-2.5">
                 {HELP_LINKS.map(l => (
@@ -293,32 +234,25 @@ export function StorefrontFooter() {
             </div>
 
             {/* Contact Details (3 cols) */}
-            <div className="lg:col-span-3 space-y-4">
+            <div className="lg:col-span-3 space-y-3.5">
               <h4 className="text-[11px] font-black uppercase tracking-widest text-slate-900">Coordonnées</h4>
               <ContactBlock contact={contact} color={primary} />
             </div>
 
           </div>
 
-          {/* Bottom Bar */}
+          {/* Bottom Bar - Clean, Minimalist & Balanced */}
           <div className="mt-12 pt-6 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-4">
             <p className="text-xs font-medium text-slate-400 text-center sm:text-left">
               {copyright}
             </p>
 
-            <div className="flex flex-wrap items-center justify-center gap-2.5">
-              <div className="flex items-center gap-1.5 px-3 py-1 bg-slate-50 rounded-full border border-slate-200/80 text-[11px] font-bold text-slate-700 shadow-2xs">
-                <Truck className="size-3 text-[#4b7bec]" />
-                <span>Expédition 58 Wilayas</span>
-              </div>
-              <div className="flex items-center gap-1.5 px-3 py-1 bg-slate-50 rounded-full border border-slate-200/80 text-[11px] font-bold text-slate-700 shadow-2xs">
-                <ShieldCheck className="size-3 text-emerald-600" />
-                <span>Paiement à la Livraison</span>
-              </div>
-              <div className="flex items-center gap-1.5 px-3 py-1 bg-slate-50 rounded-full border border-slate-200/80 text-[11px] font-bold text-slate-700 shadow-2xs">
-                <RotateCcw className="size-3 text-amber-500" />
-                <span>Garantie & Support</span>
-              </div>
+            <div className="flex items-center gap-3 text-xs font-medium text-slate-400">
+              <span>Paiement sécurisé</span>
+              <span>•</span>
+              <span>Vérification à la livraison</span>
+              <span>•</span>
+              <span>Support 7j/7</span>
             </div>
           </div>
 
@@ -484,19 +418,12 @@ export function StorefrontFooter() {
             {copyright}
           </p>
 
-          <div className="flex flex-wrap items-center justify-center gap-2.5">
-            <div className="flex items-center gap-1.5 px-3 py-1.5 bg-white/5 rounded-full border border-white/10 text-[11px] font-bold text-white/80">
-              <Truck className="size-3 text-[#4b7bec]" />
-              <span>Expédition 58 Wilayas</span>
-            </div>
-            <div className="flex items-center gap-1.5 px-3 py-1.5 bg-white/5 rounded-full border border-white/10 text-[11px] font-bold text-white/80">
-              <ShieldCheck className="size-3 text-emerald-400" />
-              <span>Paiement à la Livraison</span>
-            </div>
-            <div className="flex items-center gap-1.5 px-3 py-1.5 bg-white/5 rounded-full border border-white/10 text-[11px] font-bold text-white/80">
-              <RotateCcw className="size-3 text-amber-400" />
-              <span>Garantie & Support</span>
-            </div>
+          <div className="flex items-center gap-3 text-xs font-medium text-white/40">
+            <span>Paiement sécurisé</span>
+            <span>•</span>
+            <span>Vérification à la livraison</span>
+            <span>•</span>
+            <span>Support 7j/7</span>
           </div>
         </div>
 
