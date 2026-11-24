@@ -10,6 +10,7 @@ import { useCartStore } from '@/store/cart-store';
 import type { Product } from '@/lib/types';
 import { ProductCard } from './product-card';
 import { apiFetch } from '@/lib/api-client';
+import { resolveTemplate } from '@/lib/template-resolver';
 import { cn } from '@/lib/utils';
 
 type SortOption = 'popular' | 'newest' | 'price-asc' | 'price-desc';
@@ -194,43 +195,47 @@ function CleanGrid({ storeId, primary, setStorefrontView }: { storeId: string; p
     (d.promoOnly ? 1 : 0);
 
   return (
-    <div className="bg-[#F8F9FC] min-h-screen">
-      <div className="max-w-[1600px] mx-auto px-3 sm:px-6 lg:px-12 py-5 sm:py-8 lg:py-12 space-y-4 sm:space-y-6">
+    <div 
+      className="bg-[#F8F9FC] min-h-screen"
+      style={{ fontFamily: '"Plus Jakarta Sans", "DM Sans", system-ui, -apple-system, sans-serif' }}
+    >
+      <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-12 py-6 sm:py-8 lg:py-10 space-y-6">
 
         {/* Top Header Card (Meta Ads Style — 100% Responsive) */}
-        <div className="bg-white rounded-2xl sm:rounded-[32px] border border-slate-100 p-4 sm:p-6 lg:p-7 shadow-sm flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 sm:gap-6">
-          <div className="w-full lg:w-auto">
-            <div className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider text-slate-400 mb-1">
-              <button onClick={() => setStorefrontView('home')} className="hover:text-slate-900 transition-colors">Accueil</button>
+        <div className="bg-white rounded-3xl border border-slate-200/80 p-5 sm:p-7 lg:p-8 shadow-2xs flex flex-col lg:flex-row items-start lg:items-center justify-between gap-5 sm:gap-6">
+          <div className="w-full lg:w-auto space-y-1.5">
+            <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-400">
+              <button onClick={() => setStorefrontView('home')} className="hover:text-slate-900 transition-colors cursor-pointer">Accueil</button>
               <ChevronRight className="size-3 text-slate-300" />
-              <span className="text-slate-800">Catalogue</span>
+              <span className="text-slate-900 font-bold">Catalogue</span>
             </div>
-            <div className="flex items-center gap-2.5 flex-wrap">
-              <h1 className="text-lg sm:text-2xl font-black text-slate-900 uppercase tracking-tight">
+            <div className="flex items-center gap-3 flex-wrap">
+              <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-950 tracking-[-0.03em]">
                 {d.selectedCategory === 'all' ? 'Toutes les collections' : d.selectedCategory}
               </h1>
-              <span className="px-2.5 py-0.5 rounded-lg text-[10px] font-black uppercase font-mono bg-blue-50 text-[#4b7bec] border border-blue-100">
-                {d.total} article{d.total > 1 ? 's' : ''}
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-blue-500/10 text-blue-700 border border-blue-200/60 shadow-2xs">
+                <span className="size-1.5 rounded-full bg-blue-600 animate-pulse" />
+                {d.total} {d.total > 1 ? 'articles' : 'article'}
               </span>
             </div>
-            <p className="text-xs text-slate-400 mt-0.5 sm:mt-1 hidden sm:block">
-              Parcourez notre catalogue officiel avec livraison rapide sur les 58 Wilayas et paiement cash à la livraison.
+            <p className="text-xs sm:text-sm text-slate-500 font-medium max-w-2xl leading-relaxed">
+              Parcourez notre catalogue officiel avec livraison rapide dans les 58 Wilayas et paiement cash à la livraison.
             </p>
           </div>
 
           {/* Quick Tactical Actions: Search, Filter Toggle, Sort */}
-          <div className="flex items-center gap-2 sm:gap-3 w-full lg:w-auto">
-            <div className="relative flex-1 sm:w-64">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-slate-400" />
+          <div className="flex items-center gap-2.5 sm:gap-3 w-full lg:w-auto">
+            <div className="relative flex-1 sm:w-72">
+              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 size-4 text-slate-400" />
               <input
                 type="text"
                 value={d.search}
                 onChange={e => d.setSearch(e.target.value)}
-                placeholder="Rechercher..."
-                className="w-full h-11 pl-9 pr-8 text-xs font-medium rounded-xl border border-slate-200 bg-slate-50 focus:outline-none focus:bg-white focus:border-[#4b7bec] transition-all"
+                placeholder="Rechercher un produit..."
+                className="w-full h-11 pl-10 pr-9 text-xs font-medium rounded-full border border-slate-200/90 bg-slate-50/80 focus:bg-white focus:outline-none focus:ring-2 focus:ring-slate-900/10 focus:border-slate-400 transition-all shadow-2xs"
               />
               {d.search && (
-                <button onClick={() => d.setSearch('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+                <button onClick={() => d.setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer">
                   <X className="size-3.5" />
                 </button>
               )}
@@ -240,28 +245,28 @@ function CleanGrid({ storeId, primary, setStorefrontView }: { storeId: string; p
             <button
               onClick={() => setMobileFilterOpen(true)}
               className={cn(
-                "lg:hidden size-11 rounded-xl border flex items-center justify-center relative shrink-0 transition-all active:scale-95 shadow-2xs",
+                "lg:hidden size-11 rounded-full border flex items-center justify-center relative shrink-0 transition-all active:scale-95 shadow-2xs cursor-pointer",
                 activeFilterCount > 0 
                   ? "bg-slate-900 border-slate-900 text-white" 
-                  : "bg-slate-50 border-slate-200/80 text-slate-700 hover:bg-slate-100"
+                  : "bg-white border-slate-200 text-slate-700 hover:bg-slate-50"
               )}
               title="Filtres"
             >
               <Filter className="size-4" />
               {activeFilterCount > 0 && (
-                <span className="absolute -top-1 -right-1 size-4 rounded-full bg-[#4b7bec] text-white text-[9px] font-mono font-black flex items-center justify-center shadow-xs">
+                <span className="absolute -top-1 -right-1 size-4.5 rounded-full bg-blue-600 text-white text-[9px] font-mono font-black flex items-center justify-center shadow-xs">
                   {activeFilterCount}
                 </span>
               )}
             </button>
 
             {/* Sort Selector */}
-            <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200/80 rounded-xl px-2.5 h-11 shadow-2xs shrink-0">
+            <div className="flex items-center gap-1.5 bg-white border border-slate-200/90 rounded-full px-3.5 h-11 shadow-2xs shrink-0 hover:border-slate-300 transition-all">
               <SlidersHorizontal className="size-3.5 text-slate-400 shrink-0" />
               <select 
                 value={d.sortBy} 
                 onChange={e => d.setSortBy(e.target.value as SortOption)}
-                className="text-xs font-bold text-slate-700 bg-transparent border-none outline-none cursor-pointer"
+                className="text-xs font-bold text-slate-800 bg-transparent border-none outline-none cursor-pointer pr-1"
               >
                 {SORT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
@@ -271,139 +276,196 @@ function CleanGrid({ storeId, primary, setStorefrontView }: { storeId: string; p
 
         {/* Mobile Filter Chips Row */}
         <div className="lg:hidden flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar w-full">
-          {[{ id: 'all', label: 'Toutes les catégories' }, ...d.normalizedCategories.map(c => ({ id: c, label: c }))].map(cat => (
-            <button 
-              key={cat.id} 
-              onClick={() => { d.setSelectedCategory(cat.id); d.setSelectedCategoryStore(cat.id === 'all' ? null : cat.id); }}
-              className={cn(
-                "shrink-0 px-3.5 py-2 text-xs font-bold rounded-xl border transition-all whitespace-nowrap shadow-2xs",
-                d.selectedCategory === cat.id 
-                  ? "bg-slate-900 text-white border-slate-900 font-black shadow-xs" 
-                  : "bg-white text-slate-600 border-slate-200/80 hover:bg-slate-50"
-              )}
-            >
-              {cat.label}
-              {cat.id !== 'all' && d.categoryCounts[cat.id] !== undefined && (
-                <span className="ml-1.5 opacity-60 font-mono text-[10px]">{d.categoryCounts[cat.id]}</span>
-              )}
-            </button>
-          ))}
+          {[{ id: 'all', label: 'Toutes les catégories' }, ...d.normalizedCategories.map(c => ({ id: c, label: c }))].map(cat => {
+            const isSelected = d.selectedCategory === cat.id;
+            return (
+              <button 
+                key={cat.id} 
+                onClick={() => { d.setSelectedCategory(cat.id); d.setSelectedCategoryStore(cat.id === 'all' ? null : cat.id); }}
+                className={cn(
+                  "shrink-0 px-4 py-2 text-xs font-bold rounded-full border transition-all whitespace-nowrap shadow-2xs cursor-pointer",
+                  isSelected 
+                    ? "bg-slate-900 text-white border-slate-900 shadow-xs" 
+                    : "bg-white text-slate-600 border-slate-200/80 hover:bg-slate-50"
+                )}
+              >
+                {cat.label}
+                {cat.id !== 'all' && d.categoryCounts[cat.id] !== undefined && (
+                  <span className={cn(
+                    "ml-1.5 text-[10px] font-mono",
+                    isSelected ? "text-slate-300" : "text-slate-400"
+                  )}>
+                    {d.categoryCounts[cat.id]}
+                  </span>
+                )}
+              </button>
+            );
+          })}
         </div>
 
         <div className="flex flex-col lg:flex-row gap-6">
-          {/* Desktop Sidebar Filters */}
-          <aside className="hidden lg:flex flex-col w-72 shrink-0 gap-5 sticky top-28 h-fit">
+          {/* Desktop Unified Sidebar Filters */}
+          <aside className="hidden lg:flex flex-col w-72 shrink-0 sticky top-28 h-fit bg-white rounded-3xl border border-slate-200/80 p-6 shadow-2xs space-y-6">
 
-            {/* Categories Card */}
-            <div className="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm space-y-3">
-              <label className="text-[10px] font-black uppercase tracking-wider text-slate-400">Catégories</label>
-              <div className="flex flex-col gap-1.5">
-                {[{ id: 'all', label: 'Toutes les catégories' }, ...d.normalizedCategories.map(c => ({ id: c, label: c }))].map(cat => (
-                  <button 
-                    key={cat.id} 
-                    onClick={() => { d.setSelectedCategory(cat.id); d.setSelectedCategoryStore(cat.id === 'all' ? null : cat.id); }}
-                    className={cn(
-                      "flex items-center justify-between text-xs font-bold text-left px-3.5 py-2.5 rounded-xl transition-all",
-                      d.selectedCategory === cat.id 
-                        ? "bg-blue-50 text-[#4b7bec] font-black shadow-2xs" 
-                        : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
-                    )}
-                  >
-                    <span>{cat.label}</span>
-                    {cat.id !== 'all' && d.categoryCounts[cat.id] !== undefined && (
-                      <span className="text-[10px] font-mono font-bold text-slate-400">
-                        {d.categoryCounts[cat.id]}
-                      </span>
-                    )}
-                  </button>
-                ))}
+            {/* Header */}
+            <div className="flex items-center justify-between pb-4 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <Filter className="size-4 text-slate-900" />
+                <h3 className="text-xs font-extrabold uppercase tracking-wider text-slate-900">
+                  Filtres
+                </h3>
+              </div>
+              {d.hasActiveFilters && (
+                <button 
+                  onClick={() => { d.clearFilters(); setLocalMin(''); setLocalMax(''); }}
+                  className="text-[11px] font-bold text-rose-600 hover:text-rose-700 hover:underline cursor-pointer transition-colors"
+                >
+                  Effacer
+                </button>
+              )}
+            </div>
+
+            {/* Categories Section */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-extrabold uppercase tracking-wider text-slate-400">
+                  Catégories
+                </span>
+                <span className="text-[10px] font-bold text-slate-400 font-mono">
+                  {1 + d.normalizedCategories.length}
+                </span>
+              </div>
+              <div className="flex flex-col gap-1 max-h-60 overflow-y-auto pr-1 no-scrollbar">
+                {[{ id: 'all', label: 'Toutes les catégories' }, ...d.normalizedCategories.map(c => ({ id: c, label: c }))].map(cat => {
+                  const isSelected = d.selectedCategory === cat.id;
+                  return (
+                    <button 
+                      key={cat.id} 
+                      onClick={() => { d.setSelectedCategory(cat.id); d.setSelectedCategoryStore(cat.id === 'all' ? null : cat.id); }}
+                      className={cn(
+                        "flex items-center justify-between text-xs font-bold text-left px-3.5 py-2.5 rounded-xl transition-all cursor-pointer",
+                        isSelected 
+                          ? "bg-slate-900 text-white shadow-xs" 
+                          : "text-slate-600 hover:bg-slate-50 hover:text-slate-950"
+                      )}
+                    >
+                      <span className="truncate">{cat.label}</span>
+                      {cat.id !== 'all' && d.categoryCounts[cat.id] !== undefined ? (
+                        <span className={cn(
+                          "text-[10px] font-mono font-bold px-1.5 py-0.5 rounded-md",
+                          isSelected ? "bg-white/20 text-white" : "text-slate-400 bg-slate-100"
+                        )}>
+                          {d.categoryCounts[cat.id]}
+                        </span>
+                      ) : cat.id === 'all' ? (
+                        <span className={cn(
+                          "text-[10px] font-mono font-bold px-1.5 py-0.5 rounded-md",
+                          isSelected ? "bg-white/20 text-white" : "text-slate-400 bg-slate-100"
+                        )}>
+                          {d.total}
+                        </span>
+                      ) : null}
+                    </button>
+                  );
+                })}
               </div>
             </div>
 
-            {/* Price Filter Card */}
-            <div className="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm space-y-3">
-              <label className="text-[10px] font-black uppercase tracking-wider text-slate-400">Tranche de Prix (DA)</label>
+            {/* Price Filter Section */}
+            <div className="space-y-3 pt-5 border-t border-slate-100">
+              <span className="text-[11px] font-extrabold uppercase tracking-wider text-slate-400 block">
+                Prix (DA)
+              </span>
               <div className="grid grid-cols-2 gap-2">
-                <input 
-                  type="number" 
-                  value={localMin} 
-                  onChange={e => setLocalMin(e.target.value)} 
-                  placeholder="Min DA"
-                  className="h-10 px-3 text-xs font-bold font-mono border border-slate-200 rounded-xl bg-slate-50 focus:bg-white focus:border-[#4b7bec]" 
-                />
-                <input 
-                  type="number" 
-                  value={localMax} 
-                  onChange={e => setLocalMax(e.target.value)} 
-                  placeholder="Max DA"
-                  className="h-10 px-3 text-xs font-bold font-mono border border-slate-200 rounded-xl bg-slate-50 focus:bg-white focus:border-[#4b7bec]" 
-                />
+                <div className="relative">
+                  <input 
+                    type="number" 
+                    value={localMin} 
+                    onChange={e => setLocalMin(e.target.value)} 
+                    placeholder="Min"
+                    className="w-full h-10 px-3 pr-8 text-xs font-bold font-mono border border-slate-200/90 rounded-xl bg-slate-50 focus:bg-white focus:border-slate-900 focus:outline-none transition-all shadow-2xs" 
+                  />
+                  <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-400 pointer-events-none">DA</span>
+                </div>
+                <div className="relative">
+                  <input 
+                    type="number" 
+                    value={localMax} 
+                    onChange={e => setLocalMax(e.target.value)} 
+                    placeholder="Max"
+                    className="w-full h-10 px-3 pr-8 text-xs font-bold font-mono border border-slate-200/90 rounded-xl bg-slate-50 focus:bg-white focus:border-slate-900 focus:outline-none transition-all shadow-2xs" 
+                  />
+                  <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-400 pointer-events-none">DA</span>
+                </div>
               </div>
               <button 
                 onClick={applyPrice}
-                className="w-full h-10 text-xs font-black uppercase tracking-wider text-white rounded-xl shadow-xs transition-all hover:opacity-95"
-                style={{ backgroundColor: primary }}
+                className="w-full h-10 text-xs font-bold uppercase tracking-wider text-white rounded-xl shadow-2xs transition-all hover:opacity-95 active:scale-[0.98] cursor-pointer bg-slate-900 hover:bg-slate-800"
               >
-                Appliquer le filtre
+                Filtrer le prix
               </button>
             </div>
 
             {/* Availability Checks */}
-            <div className="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm space-y-3">
-              <label className="text-[10px] font-black uppercase tracking-wider text-slate-400">Disponibilité</label>
-              <div className="space-y-2.5">
-                <label className="flex items-center gap-2.5 cursor-pointer text-xs font-bold text-slate-700">
+            <div className="space-y-3 pt-5 border-t border-slate-100">
+              <span className="text-[11px] font-extrabold uppercase tracking-wider text-slate-400 block">
+                Disponibilité
+              </span>
+              <div className="space-y-2">
+                <label className="flex items-center gap-2.5 p-2 rounded-xl hover:bg-slate-50 cursor-pointer text-xs font-bold text-slate-700 transition-colors select-none">
                   <input 
                     type="checkbox" 
                     checked={d.inStockOnly} 
                     onChange={e => d.setInStockOnly(e.target.checked)}
-                    className="size-4 rounded accent-[#4b7bec]" 
+                    className="size-4 rounded accent-slate-900 cursor-pointer" 
                   />
-                  En stock uniquement
+                  <span>En stock uniquement</span>
                 </label>
-                <label className="flex items-center gap-2.5 cursor-pointer text-xs font-bold text-slate-700">
+                <label className="flex items-center gap-2.5 p-2 rounded-xl hover:bg-slate-50 cursor-pointer text-xs font-bold text-slate-700 transition-colors select-none">
                   <input 
                     type="checkbox" 
                     checked={d.promoOnly} 
                     onChange={e => d.setPromoOnly(e.target.checked)}
-                    className="size-4 rounded accent-[#4b7bec]" 
+                    className="size-4 rounded accent-slate-900 cursor-pointer" 
                   />
-                  En promotion
+                  <span>En promotion</span>
                 </label>
               </div>
             </div>
 
             {d.hasActiveFilters && (
-              <button 
-                onClick={() => { d.clearFilters(); setLocalMin(''); setLocalMax(''); }}
-                className="h-10 rounded-xl text-xs font-bold text-rose-600 bg-rose-50 hover:bg-rose-100 transition-colors flex items-center justify-center gap-1.5 border border-rose-100"
-              >
-                <X className="size-3.5"/> Réinitialiser les filtres
-              </button>
+              <div className="pt-2 border-t border-slate-100">
+                <button 
+                  onClick={() => { d.clearFilters(); setLocalMin(''); setLocalMax(''); }}
+                  className="w-full h-10 rounded-xl text-xs font-bold text-rose-600 bg-rose-50 hover:bg-rose-100 transition-colors flex items-center justify-center gap-1.5 border border-rose-200/60 cursor-pointer active:scale-95"
+                >
+                  <X className="size-3.5"/> Réinitialiser les filtres
+                </button>
+              </div>
             )}
           </aside>
 
           {/* Main Product Grid (Adaptive Columns for all devices) */}
           <div className="flex-1 min-w-0">
             {d.loading ? (
-              <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-3 2xl:grid-cols-4 gap-3 sm:gap-6">
+              <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-3 2xl:grid-cols-4 gap-4 sm:gap-6">
                 {Array.from({ length: 8 }).map((_, i) => (
-                  <Skeleton key={i} className="aspect-[4/5] bg-white rounded-2xl sm:rounded-[24px] border border-slate-100 shadow-sm" />
+                  <Skeleton key={i} className="aspect-[4/5] bg-white rounded-3xl border border-slate-100 shadow-2xs" />
                 ))}
               </div>
             ) : d.products.length === 0 ? (
-              <div className="bg-white rounded-2xl sm:rounded-[32px] border border-slate-100 p-10 sm:p-16 flex flex-col items-center justify-center gap-4 text-center shadow-sm">
-                <div className="size-14 rounded-2xl bg-slate-100 text-slate-400 flex items-center justify-center">
-                  <Package className="size-7" />
+              <div className="bg-white rounded-3xl border border-slate-200/80 p-10 sm:p-16 flex flex-col items-center justify-center gap-4 text-center shadow-2xs">
+                <div className="size-16 rounded-3xl bg-slate-100 text-slate-400 flex items-center justify-center">
+                  <Package className="size-8" />
                 </div>
-                <h3 className="text-base font-black text-slate-900">Aucun produit disponible</h3>
-                <p className="text-xs text-slate-400 max-w-sm">
+                <h3 className="text-lg font-extrabold text-slate-900">Aucun produit disponible</h3>
+                <p className="text-xs sm:text-sm text-slate-400 max-w-sm">
                   {d.hasActiveFilters ? 'Aucun produit ne correspond à vos filtres sélectionnés.' : 'Le catalogue de cette boutique sera bientôt complété.'}
                 </p>
                 {d.hasActiveFilters && (
                   <button 
                     onClick={() => { d.clearFilters(); setLocalMin(''); setLocalMax(''); }}
-                    className="mt-2 h-10 px-5 rounded-xl text-xs font-black uppercase tracking-wider text-white bg-slate-900 hover:bg-slate-800 transition-all"
+                    className="mt-2 h-11 px-6 rounded-full text-xs font-bold uppercase tracking-wider text-white bg-slate-900 hover:bg-slate-800 transition-all cursor-pointer shadow-xs active:scale-95"
                   >
                     Effacer les filtres
                   </button>
@@ -456,16 +518,17 @@ function CleanGrid({ storeId, primary, setStorefrontView }: { storeId: string; p
               exit={{ x: '100%' }} 
               transition={{ type: 'spring', damping: 28, stiffness: 240 }}
               className="relative w-full max-w-xs sm:max-w-sm bg-white h-full shadow-2xl flex flex-col z-10"
+              style={{ fontFamily: '"Plus Jakarta Sans", system-ui, sans-serif' }}
             >
               {/* Drawer Header */}
               <div className="flex items-center justify-between p-5 border-b border-slate-100">
                 <div className="flex items-center gap-2">
-                  <SlidersHorizontal className="size-4 text-slate-900" />
-                  <h3 className="text-sm font-black uppercase tracking-wider text-slate-900">Filtres du catalogue</h3>
+                  <Filter className="size-4 text-slate-900" />
+                  <h3 className="text-sm font-extrabold uppercase tracking-wider text-slate-900">Filtres du catalogue</h3>
                 </div>
                 <button 
                   onClick={() => setMobileFilterOpen(false)} 
-                  className="size-8 rounded-xl bg-slate-50 border border-slate-200/80 text-slate-500 hover:text-slate-900 flex items-center justify-center"
+                  className="size-8 rounded-full bg-slate-100 text-slate-500 hover:text-slate-900 flex items-center justify-center cursor-pointer transition-colors"
                 >
                   <X className="size-4" />
                 </button>
@@ -475,56 +538,64 @@ function CleanGrid({ storeId, primary, setStorefrontView }: { storeId: string; p
               <div className="flex-1 overflow-y-auto p-5 space-y-6">
                 {/* Categories */}
                 <div className="space-y-3">
-                  <label className="text-[10px] font-black uppercase tracking-wider text-slate-400">Catégories</label>
+                  <label className="text-[11px] font-extrabold uppercase tracking-wider text-slate-400">Catégories</label>
                   <div className="flex flex-col gap-1.5 max-h-56 overflow-y-auto pr-1">
-                    {[{ id: 'all', label: 'Toutes les catégories' }, ...d.normalizedCategories.map(c => ({ id: c, label: c }))].map(cat => (
-                      <button 
-                        key={cat.id} 
-                        onClick={() => { d.setSelectedCategory(cat.id); d.setSelectedCategoryStore(cat.id === 'all' ? null : cat.id); }}
-                        className={cn(
-                          "flex items-center justify-between text-xs font-bold text-left px-3 py-2 rounded-xl transition-all",
-                          d.selectedCategory === cat.id 
-                            ? "bg-slate-900 text-white font-black" 
-                            : "text-slate-600 hover:bg-slate-50"
-                        )}
-                      >
-                        <span>{cat.label}</span>
-                        {cat.id !== 'all' && d.categoryCounts[cat.id] !== undefined && (
-                          <span className={cn(
-                            "text-[10px] font-mono",
-                            d.selectedCategory === cat.id ? "text-slate-300" : "text-slate-400"
-                          )}>
-                            {d.categoryCounts[cat.id]}
-                          </span>
-                        )}
-                      </button>
-                    ))}
+                    {[{ id: 'all', label: 'Toutes les catégories' }, ...d.normalizedCategories.map(c => ({ id: c, label: c }))].map(cat => {
+                      const isSelected = d.selectedCategory === cat.id;
+                      return (
+                        <button 
+                          key={cat.id} 
+                          onClick={() => { d.setSelectedCategory(cat.id); d.setSelectedCategoryStore(cat.id === 'all' ? null : cat.id); }}
+                          className={cn(
+                            "flex items-center justify-between text-xs font-bold text-left px-3.5 py-2.5 rounded-xl transition-all cursor-pointer",
+                            isSelected 
+                              ? "bg-slate-900 text-white font-black" 
+                              : "text-slate-600 hover:bg-slate-50"
+                          )}
+                        >
+                          <span>{cat.label}</span>
+                          {cat.id !== 'all' && d.categoryCounts[cat.id] !== undefined && (
+                            <span className={cn(
+                              "text-[10px] font-mono",
+                              isSelected ? "text-slate-300" : "text-slate-400"
+                            )}>
+                              {d.categoryCounts[cat.id]}
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
 
                 {/* Price Range */}
                 <div className="space-y-3">
-                  <label className="text-[10px] font-black uppercase tracking-wider text-slate-400">Prix (DA)</label>
+                  <label className="text-[11px] font-extrabold uppercase tracking-wider text-slate-400">Prix (DA)</label>
                   <div className="grid grid-cols-2 gap-2">
-                    <input 
-                      type="number" 
-                      value={localMin} 
-                      onChange={e => setLocalMin(e.target.value)} 
-                      placeholder="Min DA"
-                      className="h-10 px-3 text-xs font-bold font-mono border border-slate-200 rounded-xl bg-slate-50 focus:bg-white" 
-                    />
-                    <input 
-                      type="number" 
-                      value={localMax} 
-                      onChange={e => setLocalMax(e.target.value)} 
-                      placeholder="Max DA"
-                      className="h-10 px-3 text-xs font-bold font-mono border border-slate-200 rounded-xl bg-slate-50 focus:bg-white" 
-                    />
+                    <div className="relative">
+                      <input 
+                        type="number" 
+                        value={localMin} 
+                        onChange={e => setLocalMin(e.target.value)} 
+                        placeholder="Min"
+                        className="w-full h-10 px-3 pr-8 text-xs font-bold font-mono border border-slate-200/90 rounded-xl bg-slate-50 focus:bg-white focus:outline-none" 
+                      />
+                      <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-400 pointer-events-none">DA</span>
+                    </div>
+                    <div className="relative">
+                      <input 
+                        type="number" 
+                        value={localMax} 
+                        onChange={e => setLocalMax(e.target.value)} 
+                        placeholder="Max"
+                        className="w-full h-10 px-3 pr-8 text-xs font-bold font-mono border border-slate-200/90 rounded-xl bg-slate-50 focus:bg-white focus:outline-none" 
+                      />
+                      <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-400 pointer-events-none">DA</span>
+                    </div>
                   </div>
                   <button 
                     onClick={applyPrice}
-                    className="w-full h-10 text-xs font-black uppercase tracking-wider text-white rounded-xl shadow-xs"
-                    style={{ backgroundColor: primary }}
+                    className="w-full h-10 text-xs font-bold uppercase tracking-wider text-white rounded-xl shadow-xs cursor-pointer bg-slate-900 hover:bg-slate-800 transition-all"
                   >
                     Appliquer le prix
                   </button>
@@ -532,14 +603,14 @@ function CleanGrid({ storeId, primary, setStorefrontView }: { storeId: string; p
 
                 {/* Availability */}
                 <div className="space-y-3">
-                  <label className="text-[10px] font-black uppercase tracking-wider text-slate-400">Disponibilité</label>
+                  <label className="text-[11px] font-extrabold uppercase tracking-wider text-slate-400">Disponibilité</label>
                   <div className="space-y-2.5">
                     <label className="flex items-center gap-2.5 cursor-pointer text-xs font-bold text-slate-700">
                       <input 
                         type="checkbox" 
                         checked={d.inStockOnly} 
                         onChange={e => d.setInStockOnly(e.target.checked)}
-                        className="size-4 rounded accent-[#4b7bec]" 
+                        className="size-4 rounded accent-slate-900" 
                       />
                       En stock uniquement
                     </label>
@@ -548,7 +619,7 @@ function CleanGrid({ storeId, primary, setStorefrontView }: { storeId: string; p
                         type="checkbox" 
                         checked={d.promoOnly} 
                         onChange={e => d.setPromoOnly(e.target.checked)}
-                        className="size-4 rounded accent-[#4b7bec]" 
+                        className="size-4 rounded accent-slate-900" 
                       />
                       En promotion
                     </label>
@@ -561,14 +632,14 @@ function CleanGrid({ storeId, primary, setStorefrontView }: { storeId: string; p
                 {d.hasActiveFilters && (
                   <button 
                     onClick={() => { d.clearFilters(); setLocalMin(''); setLocalMax(''); }}
-                    className="flex-1 h-11 text-xs font-bold text-rose-600 bg-rose-50 rounded-xl border border-rose-100"
+                    className="flex-1 h-11 text-xs font-bold text-rose-600 bg-rose-50 rounded-full border border-rose-100 cursor-pointer"
                   >
                     Réinitialiser
                   </button>
                 )}
                 <button 
                   onClick={() => setMobileFilterOpen(false)}
-                  className="flex-1 h-11 text-xs font-black uppercase tracking-wider text-white bg-slate-900 rounded-xl shadow-xs"
+                  className="flex-1 h-11 text-xs font-bold uppercase tracking-wider text-white bg-slate-900 rounded-full shadow-xs cursor-pointer"
                 >
                   Voir {d.total} produits
                 </button>
@@ -774,8 +845,7 @@ function LuxeGrid({ storeId, primary, setStorefrontView }: { storeId: string; pr
 export function ProductGrid() {
   const activeStore = useAppStore(s => s.activeStore);
   const setStorefrontView = useAppStore(s => s.setStorefrontView);
-  const _raw = (activeStore?.template_id ?? 'clean') as string;
-  const tpl = _raw === 'minimalist' ? 'clean' : _raw === 'landing' ? 'athletic' : _raw;
+  const tpl = resolveTemplate(activeStore?.template_id);
   const primary = (activeStore?.theme_config?.primaryColor as string) || '#4b7bec';
   const storeId = activeStore?.id;
 
