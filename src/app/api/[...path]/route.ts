@@ -5,6 +5,44 @@ export const dynamic = 'force-dynamic';
 
 const BACKEND_URL = getBackendUrl();
 
+// ─── High-speed In-Memory Cache for Public GET Endpoints ──────────────────────
+interface CacheEntry {
+  data: ArrayBuffer;
+  status: number;
+  statusText: string;
+  headers: [string, string][];
+  expiresAt: number;
+}
+
+const memoryCache = new Map<string, CacheEntry>();
+const CACHE_MAX_SIZE = 300;
+
+function getCachedResponse(key: string): CacheEntry | null {
+  const entry = memoryCache.get(key);
+  if (!entry) return null;
+  if (Date.now() > entry.expiresAt) {
+    memoryCache.delete(key);
+    return null;
+  }
+  return entry;
+}
+
+function setCachedResponse(key: string, entry: CacheEntry) {
+  if (memoryCache.size >= CACHE_MAX_SIZE) {
+    const iter = memoryCache.keys();
+    for (let i = 0; i < 50; i++) {
+      const nextKey = iter.next().value;
+      if (nextKey) memoryCache.delete(nextKey);
+      else break;
+    }
+  }
+  memoryCache.set(key, entry);
+}
+
+function clearCacheForMutations() {
+  memoryCache.clear();
+}
+
 export async function GET(request: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {
   const resolvedParams = await params;
   return handleProxy(request, resolvedParams);
@@ -40,6 +78,31 @@ async function handleProxy(request: NextRequest, { path }: { path: string[] }) {
 
     const searchParams = request.nextUrl.searchParams.toString();
     const targetUrl = `${BACKEND_URL}/api/${subPath}${searchParams ? `?${searchParams}` : ''}`;
+
+    // Fast-path in-memory cache for anonymous public GET endpoints (products, stores, reviews)
+    const isPublicCacheable = 
+      request.method === 'GET' &&
+      !request.cookies.get('__session') &&
+      (subPath.startsWith('v1/products') || subPath.startsWith('v1/stores') || subPath.startsWith('v1/reviews'));
+
+    const cacheKey = `${subPath}?${searchParams}`;
+    if (isPublicCacheable) {
+      const cached = getCachedResponse(cacheKey);
+      if (cached) {
+        const resHeaders = new Headers(cached.headers);
+        resHeaders.set('X-Proxy-Cache', 'HIT');
+        return new NextResponse(cached.data.slice(0), {
+          status: cached.status,
+          statusText: cached.statusText,
+          headers: resHeaders,
+        });
+      }
+    }
+
+    // Invalidate cache immediately on any mutation method
+    if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(request.method)) {
+      clearCacheForMutations();
+    }
 
     // Filter headers to only pass essential ones, stripping Host/Origin/Referer
     const headers = new Headers();
@@ -147,23 +210,38 @@ async function handleProxy(request: NextRequest, { path }: { path: string[] }) {
       const hasSession = !!request.cookies.get('__session');
       if (subPath === 'v1/reviews' || subPath.startsWith('v1/reviews')) {
         // Public reviews list — no current_user dependency in the backend, never personalized.
-        resHeaders.set('Cache-Control', 'public, s-maxage=60, stale-while-revalidate=300');
+        resHeaders.set('Cache-Control', 'public, max-age=30, s-maxage=60, stale-while-revalidate=300');
       } else if (subPath === 'v1/stores/lookup/domain') {
         // Pure domain→store lookup, no auth dependency at all.
-        resHeaders.set('Cache-Control', 'public, s-maxage=120, stale-while-revalidate=600');
+        resHeaders.set('Cache-Control', 'public, max-age=60, s-maxage=120, stale-while-revalidate=600');
       } else if (
         !hasSession &&
         (subPath === 'v1/products' || subPath.startsWith('v1/products/') || subPath === 'v1/products/categories')
       ) {
-        // Product list/detail widens for staff (draft/inactive items) — only cache anonymous requests.
-        resHeaders.set('Cache-Control', 'public, s-maxage=30, stale-while-revalidate=120');
+        // Product list/detail widens for staff (draft/inactive items) — cache anonymous requests in browser and CDN.
+        resHeaders.set('Cache-Control', 'public, max-age=15, s-maxage=60, stale-while-revalidate=300');
       } else if (!hasSession && subPath === 'v1/stores') {
-        // Store list is scoped per staff role — only cache anonymous requests.
-        resHeaders.set('Cache-Control', 'public, s-maxage=30, stale-while-revalidate=120');
+        // Store list is scoped per staff role — cache anonymous requests.
+        resHeaders.set('Cache-Control', 'public, max-age=30, s-maxage=120, stale-while-revalidate=600');
       }
     }
 
     const responseData = await response.arrayBuffer();
+
+    // Store in-memory cache for fast-path retrieval on subsequent hits
+    if (isPublicCacheable && response.ok && !resHeaders.has('set-cookie')) {
+      const ttl = subPath.startsWith('v1/stores') ? 60000 : 30000;
+      const headerPairs: [string, string][] = [];
+      resHeaders.forEach((val, key) => headerPairs.push([key, val]));
+      setCachedResponse(cacheKey, {
+        data: responseData.slice(0),
+        status: response.status,
+        statusText: response.statusText,
+        headers: headerPairs,
+        expiresAt: Date.now() + ttl,
+      });
+      resHeaders.set('X-Proxy-Cache', 'MISS');
+    }
 
     return new NextResponse(responseData, {
       status: response.status,

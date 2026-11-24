@@ -45,13 +45,13 @@ export function HomeSections() {
     queryKey: ['store-products', activeStore?.id, 'featured', 8],
     queryFn: () => apiFetch<{ success: boolean; data: Product[] }>(`/api/v1/products?store_id=${activeStore!.id}&pageSize=8&is_featured=true&is_active=true`),
     enabled: !!activeStore,
-    staleTime: 60 * 1000,
+    staleTime: 5 * 60 * 1000,
   });
   const activeQuery = useQuery({
     queryKey: ['store-products', activeStore?.id, 'active', 8],
     queryFn: () => apiFetch<{ success: boolean; data: Product[] }>(`/api/v1/products?store_id=${activeStore!.id}&pageSize=8&is_active=true`),
     enabled: !!activeStore,
-    staleTime: 60 * 1000,
+    staleTime: 5 * 60 * 1000,
   });
   useEffect(() => {
     if (!activeStore) return;

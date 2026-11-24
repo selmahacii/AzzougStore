@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   ArrowLeft, Minus, Plus, ShoppingCart, CheckCircle, Package,
   AlertTriangle, Truck, Heart, ShieldCheck, Star, ChevronRight, Zap,
@@ -22,6 +23,7 @@ import { trackMetaEvent } from '@/lib/meta-tracking';
 import { optimizeCloudinaryUrl } from '@/lib/image-optimize';
 
 function useProductDetailData() {
+  const queryClient = useQueryClient();
   const activeStore = useAppStore((s) => s.activeStore);
   const selectedProductSlug = useAppStore((s) => s.selectedProductSlug);
   const setSelectedProductSlug = useAppStore((s) => s.setSelectedProductSlug);
@@ -31,55 +33,65 @@ function useProductDetailData() {
   const toggleWishlist = useCartStore((s) => s.toggleWishlist);
   const isInWishlist = useCartStore((s) => s.isInWishlist);
 
-  const [product, setProduct] = useState<Product | null>(null);
-  const [relatedProducts, setRelatedProducts] = useState<Product[]>([]);
-  const [loading, setLoading] = useState(true);
   const [addedToCart, setAddedToCart] = useState(false);
   const [activeImage, setActiveImage] = useState(0);
-
   const [selections, setSelections] = useState<Record<string, { quantity: number; notes: string }>>({});
 
-  const fetchProduct = useCallback(async (signal?: AbortSignal) => {
-    if (!activeStore || !selectedProductSlug) { setProduct(null); setLoading(false); return; }
-    setLoading(true); setAddedToCart(false); setActiveImage(0);
-    try {
-      const json = await apiFetch<any>(`/api/v1/products?store_id=${activeStore.id}&slug=${selectedProductSlug}&is_active=true`, { signal });
+  // Query product with instant cache lookup from queryClient
+  const { data: product = null, isLoading: productLoading } = useQuery<Product | null>({
+    queryKey: ['store-product-detail', activeStore?.id, selectedProductSlug],
+    queryFn: async () => {
+      if (!activeStore || !selectedProductSlug) return null;
+      const json = await apiFetch<any>(`/api/v1/products?store_id=${activeStore.id}&slug=${selectedProductSlug}&is_active=true`);
       const productData = json.data ? (Array.isArray(json.data) ? json.data[0] : json.data) : null;
-      if (productData && productData.is_active === false) {
-        setProduct(null);
-        return;
+      if (productData && productData.is_active === false) return null;
+      return (productData ?? null) as Product | null;
+    },
+    initialData: () => {
+      if (!selectedProductSlug) return undefined;
+      // Search all existing cached product lists (home sections, hero, catalog) for 0ms instant display
+      const allQueries = queryClient.getQueriesData<any>({ queryKey: ['store-products'] });
+      for (const [, queryData] of allQueries) {
+        const list = Array.isArray(queryData?.data) ? queryData.data : (Array.isArray(queryData) ? queryData : []);
+        const found = list.find((p: any) => p?.slug === selectedProductSlug);
+        if (found) return found as Product;
       }
-      setProduct(productData ?? null);
-      if (productData) {
-        const initialSelections: Record<string, { quantity: number; notes: string }> = {};
-        if (productData.variants && productData.variants.length > 0) {
-          productData.variants.forEach((v: any) => {
-            initialSelections[v.value] = { quantity: 0, notes: '' };
-          });
-        } else {
-          initialSelections['default'] = { quantity: 1, notes: '' };
-        }
-        setSelections(initialSelections);
-      }
-    } catch (err) {
-      if (err instanceof DOMException && err.name === 'AbortError') return;
-      setProduct(null);
-    } finally { setLoading(false); }
-  }, [activeStore, selectedProductSlug]);
+      return undefined;
+    },
+    enabled: !!activeStore?.id && !!selectedProductSlug,
+    staleTime: 5 * 60 * 1000,
+  });
 
-  const fetchRelated = useCallback(async (signal?: AbortSignal) => {
-    if (!activeStore || !product?.category) { setRelatedProducts([]); return; }
-    try {
-      const json = await apiFetch<any>(`/api/v1/products?store_id=${activeStore.id}&category=${encodeURIComponent(product.category)}&pageSize=5&is_active=true`, { signal });
-      setRelatedProducts((json.data ?? []).filter((p: Product) => p.id !== product.id).slice(0, 4));
-    } catch (err) {
-      if (err instanceof DOMException && err.name === 'AbortError') return;
-      setRelatedProducts([]);
+  // Query related products with 5min cache
+  const { data: relatedProducts = [] } = useQuery<Product[]>({
+    queryKey: ['store-products-related', activeStore?.id, product?.category],
+    queryFn: async () => {
+      if (!activeStore || !product?.category) return [];
+      const json = await apiFetch<any>(`/api/v1/products?store_id=${activeStore.id}&category=${encodeURIComponent(product.category)}&pageSize=5&is_active=true`);
+      return ((json.data ?? []).filter((p: Product) => p.id !== product.id).slice(0, 4)) as Product[];
+    },
+    enabled: !!activeStore?.id && !!product?.category,
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const loading = productLoading && !product;
+
+  // Initialize variant selections whenever product changes
+  useEffect(() => {
+    setActiveImage(0);
+    setAddedToCart(false);
+    if (product) {
+      const initialSelections: Record<string, { quantity: number; notes: string }> = {};
+      if (product.variants && product.variants.length > 0) {
+        product.variants.forEach((v: any) => {
+          initialSelections[v.value] = { quantity: 0, notes: '' };
+        });
+      } else {
+        initialSelections['default'] = { quantity: 1, notes: '' };
+      }
+      setSelections(initialSelections);
     }
-  }, [activeStore, product]);
-
-  useEffect(() => { const c = new AbortController(); fetchProduct(c.signal); return () => c.abort(); }, [fetchProduct]);
-  useEffect(() => { const c = new AbortController(); fetchRelated(c.signal); return () => c.abort(); }, [fetchRelated]);
+  }, [product?.id]);
 
   useEffect(() => {
     if (!product || typeof window === 'undefined') return;

@@ -40,10 +40,9 @@ export function AppBootstrap() {
       const hydratedStores = useAppStore.getState().allStores;
       if (hydratedStores.length > 0) {
         const { isAuthenticated: cachedAuth, user: cachedUser, appView: cachedView } = useAppStore.getState();
-        // Only verify with /api/v1/auth/me if the user was previously authenticated
-        // or is attempting to view the admin area — prevents noisy 401 console errors
-        // for regular guest storefront shoppers.
-        if (cachedAuth || cachedUser || cachedView === 'admin') {
+        // Only verify with /api/v1/auth/me if the user is in admin view
+        // Storefront shoppers are anonymous guest visitors and should never call /auth/me (avoids 401 errors & latency).
+        if (cachedView === 'admin' && (cachedAuth || cachedUser)) {
           try {
             const meRes = await fetch('/api/v1/auth/me', {
               signal,
@@ -89,10 +88,10 @@ export function AppBootstrap() {
       if (stores.length > 0) {
         setAllStores(stores);
         
-        // Final check for user if not hydrated
+        // Final check for user if not hydrated — admin view only
         const { isAuthenticated: cachedAuth2, user: cachedUser2, appView: cachedView2 } = useAppStore.getState();
         let currentUser = cachedUser2;
-        if (cachedAuth2 || cachedUser2 || cachedView2 === 'admin') {
+        if (cachedView2 === 'admin' && (cachedAuth2 || cachedUser2)) {
           try {
             console.log('[AppBootstrap] Fetching current user /api/v1/auth/me...');
             const meRes = await fetch('/api/v1/auth/me', {

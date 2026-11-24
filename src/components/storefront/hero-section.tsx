@@ -617,33 +617,29 @@ export function HeroSection() {
   const [featuredProducts, setFeaturedProducts] = useState<Product[]>([]);
 
   // Même queryKey que home-sections.tsx pour cette même requête — les deux
-  // sections sont montées ensemble sur la page d'accueil et chacune
-  // déclenchait indépendamment un fetch() brut identique (confirmé en
-  // réseau : appel dupliqué à chaque chargement). React Query dédoublonne
-  // les useQuery de même clé en un seul appel réseau partagé.
+  // Fusion complète avec home-sections.tsx :
+  // Utilise exactement la même queryKey et pageSize=8 que home-sections.tsx pour que React Query
+  // dédoublonne parfaitement en UN SEUL appel réseau partagé au chargement.
   const featuredQuery = useQuery({
-    queryKey: ['store-products', activeStore?.id, 'featured', 4],
-    queryFn: () => apiFetch<{ success: boolean; data: Product[] }>(`/api/v1/products?store_id=${activeStore!.id}&pageSize=4&is_featured=true&is_active=true`),
+    queryKey: ['store-products', activeStore?.id, 'featured', 8],
+    queryFn: () => apiFetch<{ success: boolean; data: Product[] }>(`/api/v1/products?store_id=${activeStore!.id}&pageSize=8&is_featured=true&is_active=true`),
     enabled: !!activeStore,
-    staleTime: 60 * 1000,
+    staleTime: 5 * 60 * 1000,
   });
-  // Repli sur les produits actifs UNIQUEMENT si le store n'a aucun produit
-  // vedette — comportement inchangé, juste sourcé via la même queryKey
-  // partagée que home-sections.tsx utilise pour sa propre section "Nouveautés".
   const hasNoFeatured = featuredQuery.isSuccess && (!featuredQuery.data?.data || featuredQuery.data.data.length === 0);
   const fallbackQuery = useQuery({
-    queryKey: ['store-products', activeStore?.id, 'active', 4],
-    queryFn: () => apiFetch<{ success: boolean; data: Product[] }>(`/api/v1/products?store_id=${activeStore!.id}&pageSize=4&is_active=true`),
+    queryKey: ['store-products', activeStore?.id, 'active', 8],
+    queryFn: () => apiFetch<{ success: boolean; data: Product[] }>(`/api/v1/products?store_id=${activeStore!.id}&pageSize=8&is_active=true`),
     enabled: !!activeStore && hasNoFeatured,
-    staleTime: 60 * 1000,
+    staleTime: 5 * 60 * 1000,
   });
   const loading = featuredQuery.isLoading || (hasNoFeatured && fallbackQuery.isLoading);
 
   useEffect(() => {
     if (featuredQuery.data?.success && featuredQuery.data.data && featuredQuery.data.data.length > 0) {
-      setFeaturedProducts(featuredQuery.data.data);
+      setFeaturedProducts(featuredQuery.data.data.slice(0, 4));
     } else if (hasNoFeatured && fallbackQuery.data?.success) {
-      setFeaturedProducts(fallbackQuery.data.data ?? []);
+      setFeaturedProducts((fallbackQuery.data.data ?? []).slice(0, 4));
     } else if (!activeStore) {
       setFeaturedProducts([]);
     }

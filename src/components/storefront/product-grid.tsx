@@ -2,6 +2,7 @@
 
 import { motion, AnimatePresence } from 'framer-motion';
 import { useCallback, useEffect, useState, useMemo } from 'react';
+import { useQuery, keepPreviousData } from '@tanstack/react-query';
 import { Search, SlidersHorizontal, X, ChevronLeft, ChevronRight, Package, Filter } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -28,13 +29,7 @@ function useProductData(storeId: string | undefined) {
   const selectedCategoryStore = useAppStore(s => s.selectedCategory);
   const setSelectedCategoryStore = useAppStore(s => s.setSelectedCategory);
 
-  const [products, setProducts] = useState<Product[]>([]);
-  const [rawCategories, setRawCategories] = useState<string[]>([]);
-  const [categoryCounts, setCategoryCounts] = useState<Record<string, number>>({});
-  const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
-  const [total, setTotal] = useState(0);
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [selectedCategory, setSelectedCategory] = useState(selectedCategoryStore || 'all');
@@ -52,54 +47,54 @@ function useProductData(storeId: string | undefined) {
   }, [selectedCategoryStore]);
 
   useEffect(() => {
-    const t = setTimeout(() => setDebouncedSearch(search), 400);
+    const t = setTimeout(() => setDebouncedSearch(search), 300);
     return () => clearTimeout(t);
   }, [search]);
+
+  useEffect(() => { setPage(1); }, [debouncedSearch, selectedCategory, minPrice, maxPrice, sortBy]);
+
+  const queryParams = useMemo(() => {
+    if (!storeId) return null;
+    const params = new URLSearchParams({ store_id: storeId, page: String(page), pageSize: String(pageSize), sort: sortBy, is_active: 'true' });
+    if (debouncedSearch) params.set('search', debouncedSearch);
+    if (selectedCategory !== 'all') params.set('category', selectedCategory);
+    if (minPrice !== null) params.set('min_price', String(minPrice));
+    if (maxPrice !== null) params.set('max_price', String(maxPrice));
+    if (inStockOnly) params.set('in_stock', 'true');
+    if (promoOnly) params.set('promo', 'true');
+    return params.toString();
+  }, [storeId, page, pageSize, sortBy, debouncedSearch, selectedCategory, minPrice, maxPrice, inStockOnly, promoOnly]);
+
+  const { data: gridData, isLoading: gridLoading } = useQuery<any>({
+    queryKey: ['store-catalog', queryParams],
+    queryFn: () => apiFetch<any>(`/api/v1/products?${queryParams}`),
+    enabled: !!queryParams,
+    staleTime: 5 * 60 * 1000,
+    placeholderData: keepPreviousData,
+  });
+
+  const products = useMemo(() => {
+    return (gridData?.data ?? []).filter((p: Product) => p.is_active !== false);
+  }, [gridData?.data]);
+
+  const totalPages = gridData?.totalPages ?? 1;
+  const total = gridData?.total ?? 0;
+
+  const rawCategories = useMemo(() => {
+    if (gridData?.categories) return gridData.categories as string[];
+    const cats = new Set<string>();
+    (gridData?.data ?? []).forEach((p: Product) => { if (p.category) cats.add(p.category); });
+    return Array.from(cats);
+  }, [gridData]);
+
+  const categoryCounts = gridData?.categoryCounts ?? {};
+  const loading = gridLoading && !gridData;
 
   const normalizedCategories = useMemo(() => {
     const map = new Map<string, string>();
     rawCategories.forEach(c => { const k = c.toLowerCase().trim(); if (!map.has(k)) map.set(k, c); });
     return Array.from(map.values()).sort();
   }, [rawCategories]);
-
-  const fetchProducts = useCallback(async (signal?: AbortSignal) => {
-    if (!storeId) return;
-    setLoading(true);
-    try {
-      const params = new URLSearchParams({ store_id: storeId, page: String(page), pageSize: String(pageSize), sort: sortBy, is_active: 'true' });
-      if (debouncedSearch) params.set('search', debouncedSearch);
-      if (selectedCategory !== 'all') params.set('category', selectedCategory);
-      if (minPrice !== null) params.set('min_price', String(minPrice));
-      if (maxPrice !== null) params.set('max_price', String(maxPrice));
-      if (inStockOnly) params.set('in_stock', 'true');
-      if (promoOnly) params.set('promo', 'true');
-      const json = await apiFetch<any>(`/api/v1/products?${params}`, { signal });
-      const activeProducts = (json.data ?? []).filter((p: Product) => p.is_active !== false);
-      setProducts(activeProducts);
-      setTotalPages(json.totalPages ?? 1);
-      setTotal(json.total ?? 0);
-      if (json.categories) setRawCategories(json.categories);
-      else {
-        const cats = new Set<string>();
-        (json.data ?? []).forEach((p: Product) => { if (p.category) cats.add(p.category); });
-        setRawCategories(Array.from(cats));
-      }
-      if (json.categoryCounts) setCategoryCounts(json.categoryCounts);
-    } catch (err) {
-      if (err instanceof DOMException && err.name === 'AbortError') return;
-      setProducts([]);
-    } finally {
-      setLoading(false);
-    }
-  }, [storeId, page, debouncedSearch, selectedCategory, minPrice, maxPrice, sortBy, inStockOnly, promoOnly]);
-
-  useEffect(() => { setPage(1); }, [debouncedSearch, selectedCategory, minPrice, maxPrice, sortBy]);
-
-  useEffect(() => {
-    const c = new AbortController();
-    fetchProducts(c.signal);
-    return () => c.abort();
-  }, [fetchProducts]);
 
   const clearFilters = () => {
     setSearch(''); setSelectedCategory('all'); setSelectedCategoryStore(null);
