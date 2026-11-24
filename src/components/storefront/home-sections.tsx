@@ -7,6 +7,7 @@ import { useQuery } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api-client';
 import type { Product } from '@/lib/types';
 import { DEFAULT_HOME_SECTIONS } from '@/lib/types';
+import { resolveTemplate } from '@/lib/template-resolver';
 import { ProductCard } from './product-card';
 import { ArrowRight, Star, ChevronRight, Quote, CheckCircle, Truck, Package as PackageIcon, ShieldCheck } from 'lucide-react';
 import { motion } from 'framer-motion';
@@ -41,14 +42,14 @@ export function HomeSections() {
   // (deux appels identiques par chargement de page). React Query fusionne
   // les useQuery de même clé en un seul appel réseau partagé.
   const featuredQuery = useQuery({
-    queryKey: ['store-products', activeStore?.id, 'featured', 4],
-    queryFn: () => apiFetch<{ success: boolean; data: Product[] }>(`/api/v1/products?store_id=${activeStore!.id}&pageSize=4&is_featured=true&is_active=true`),
+    queryKey: ['store-products', activeStore?.id, 'featured', 8],
+    queryFn: () => apiFetch<{ success: boolean; data: Product[] }>(`/api/v1/products?store_id=${activeStore!.id}&pageSize=8&is_featured=true&is_active=true`),
     enabled: !!activeStore,
     staleTime: 60 * 1000,
   });
   const activeQuery = useQuery({
-    queryKey: ['store-products', activeStore?.id, 'active', 4],
-    queryFn: () => apiFetch<{ success: boolean; data: Product[] }>(`/api/v1/products?store_id=${activeStore!.id}&pageSize=4&is_active=true`),
+    queryKey: ['store-products', activeStore?.id, 'active', 8],
+    queryFn: () => apiFetch<{ success: boolean; data: Product[] }>(`/api/v1/products?store_id=${activeStore!.id}&pageSize=8&is_active=true`),
     enabled: !!activeStore,
     staleTime: 60 * 1000,
   });
@@ -57,9 +58,16 @@ export function HomeSections() {
     if (featuredQuery.isLoading || activeQuery.isLoading) { setLoading(true); return; }
     const f = featuredQuery.data;
     const n = activeQuery.data;
-    const featuredData = (f?.data && f.data.length > 0 ? f.data : (n?.data ?? [])).filter((p: Product) => p.is_active !== false);
+    const allActive = (n?.data ?? []).filter((p: Product) => p.is_active !== false);
+    const explicitFeatured = (f?.data ?? []).filter((p: Product) => p.is_active !== false);
+    
+    // Featured / Best sellers
+    const featuredData = explicitFeatured.length > 0 ? explicitFeatured : allActive.slice(0, 4);
     setFeatured(featuredData);
-    setNewArrivals((n?.data ?? []).filter((p: Product) => p.is_active !== false));
+
+    // New arrivals: take the subsequent active products, or fallback to all active products so both sections display products
+    const remaining = allActive.length > 4 ? allActive.slice(4) : allActive;
+    setNewArrivals(remaining.length > 0 ? remaining : (explicitFeatured.length > 0 ? allActive : []));
     setLoading(false);
   }, [activeStore, featuredQuery.data, featuredQuery.isLoading, activeQuery.data, activeQuery.isLoading]);
 
@@ -92,7 +100,7 @@ export function HomeSections() {
   if (!activeStore) return null;
 
   const _raw = activeStore.template_id || 'clean';
-  const tpl = _raw === 'minimalist' ? 'clean' : _raw === 'landing' ? 'athletic' : _raw;
+  const tpl = resolveTemplate(activeStore.template_id);
   
   const bgClass = 
     tpl === 'athletic' ? 'bg-[#0A0A0A] text-white min-h-screen' :
@@ -113,44 +121,50 @@ export function HomeSections() {
         id="best-sellers"
         className={cn(
           tpl === 'clean' 
-            ? 'max-w-[1600px] mx-auto px-4 sm:px-8 lg:px-12 py-16 sm:py-24' 
-            : 'max-w-7xl mx-auto px-4 sm:px-8 lg:px-12 py-20 sm:py-32'
+            ? 'max-w-[1600px] mx-auto px-4 sm:px-8 lg:px-12 py-12 sm:py-20' 
+            : 'max-w-7xl mx-auto px-4 sm:px-8 lg:px-12 py-16 sm:py-24'
         )}
+        style={{ fontFamily: '"Plus Jakarta Sans", system-ui, -apple-system, sans-serif' }}
       >
         <div className={cn(
-          "flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-10 sm:mb-14",
-          tpl === 'clean' && "border-b border-slate-100 pb-5"
+          "flex items-end justify-between gap-3 mb-8 sm:mb-12",
+          tpl === 'clean' && "border-b border-slate-100 pb-4 sm:pb-5"
         )}>
-          <div>
+          <div className="space-y-1.5 sm:space-y-2">
             <div className={cn(
-              "inline-flex items-center gap-2 mb-2",
-              tpl === 'clean' && "px-3 py-1 rounded-lg bg-blue-50 text-[#4b7bec] border border-blue-100"
+              "inline-flex items-center gap-2 px-3 py-1 rounded-full",
+              tpl === 'clean' ? "bg-blue-500/10 text-blue-700 border border-blue-200/60 shadow-2xs" : "bg-white/10 text-white"
             )}>
-              <span className="size-1.5 rounded-full bg-[#4b7bec]" />
-              <span className="text-[9px] font-black uppercase tracking-wider">
+              <span className="relative flex size-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full size-2 bg-blue-600"></span>
+              </span>
+              <span className="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider font-['Plus_Jakarta_Sans',sans-serif]">
                 {bestSellersTag}
               </span>
             </div>
             <h2 className={cn(
-              "text-2xl sm:text-4xl tracking-tight uppercase",
-              tpl === 'clean' ? 'font-black text-slate-900' :
+              "text-2xl sm:text-3xl lg:text-4xl tracking-[-0.03em]",
+              tpl === 'clean' ? 'font-extrabold text-slate-900' :
               tpl === 'luxe' ? 'font-thin text-white' :
-              'font-black text-white tracking-tighter'
-            )}>
+              'font-extrabold text-white tracking-tighter'
+            )}
+            style={{ fontFamily: '"Plus Jakarta Sans", system-ui, sans-serif' }}
+            >
               {bestSellersLabel}
             </h2>
           </div>
           <button 
             onClick={() => setStorefrontView('shop')}
             className={cn(
-              "hidden sm:flex items-center gap-2 text-xs font-black uppercase tracking-wider transition-all",
-              tpl === 'clean' ? 'text-slate-600 hover:text-slate-900 bg-white border border-slate-200 px-4 py-2 rounded-xl shadow-2xs hover:bg-slate-50' :
+              "inline-flex items-center gap-1.5 sm:gap-2 text-xs sm:text-[13px] font-bold uppercase tracking-wider transition-all duration-200 shrink-0 cursor-pointer",
+              tpl === 'clean' ? 'text-slate-700 hover:text-slate-950 bg-white border border-slate-200 px-3.5 py-1.5 sm:px-5 sm:py-2.5 rounded-full shadow-2xs hover:bg-slate-50 hover:border-slate-300 active:scale-95' :
               tpl === 'luxe' ? 'text-white/40 hover:text-white border-b border-white/10 pb-1.5' :
-              'text-white/40 hover:text-white'
+              'text-white/70 hover:text-white'
             )}
           >
-            {t('exploreAll')} 
-            <ArrowRight className="size-3.5"/>
+            <span>{t('exploreAll')}</span>
+            <ArrowRight className="size-3.5 transition-transform group-hover:translate-x-0.5" />
           </button>
         </div>
 
@@ -200,69 +214,101 @@ export function HomeSections() {
   );
 
 
-  const newArrivalsSection = newArrivals.length > 0 ? (
+  const newArrivalsSection = (
         <section
           key="newArrivals"
           className={cn(
             tpl === 'clean' 
-              ? 'max-w-[1600px] mx-auto px-4 sm:px-8 lg:px-12 py-16 sm:py-24' 
-              : 'max-w-7xl mx-auto px-4 sm:px-8 lg:px-12 py-20 sm:py-32'
+              ? 'max-w-[1600px] mx-auto px-4 sm:px-8 lg:px-12 py-12 sm:py-20' 
+              : 'max-w-7xl mx-auto px-4 sm:px-8 lg:px-12 py-16 sm:py-24'
           )}
+          style={{ fontFamily: '"Plus Jakarta Sans", system-ui, -apple-system, sans-serif' }}
         >
           <div className={cn(
-            "flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-10 sm:mb-14",
-            tpl === 'clean' && "border-b border-slate-100 pb-5"
+            "flex items-end justify-between gap-3 mb-8 sm:mb-12",
+            tpl === 'clean' && "border-b border-slate-100 pb-4 sm:pb-5"
           )}>
-            <div>
+            <div className="space-y-1.5 sm:space-y-2">
               <div className={cn(
-                "inline-flex items-center gap-2 mb-2",
-                tpl === 'clean' && "px-3 py-1 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-100"
+                "inline-flex items-center gap-2 px-3 py-1 rounded-full",
+                tpl === 'clean' ? "bg-emerald-500/10 text-emerald-700 border border-emerald-200/60 shadow-2xs" : "bg-white/10 text-white"
               )}>
-                <span className="size-1.5 rounded-full bg-emerald-500" />
-                <span className="text-[9px] font-black uppercase tracking-wider">
+                <span className="relative flex size-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full size-2 bg-emerald-600"></span>
+                </span>
+                <span className="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider font-['Plus_Jakarta_Sans',sans-serif]">
                   {newArrivalsTag}
                 </span>
               </div>
               <h2 className={cn(
-                "text-2xl sm:text-4xl tracking-tight uppercase",
-                tpl === 'clean' ? 'font-black text-slate-900' :
+                "text-2xl sm:text-3xl lg:text-4xl tracking-[-0.03em]",
+                tpl === 'clean' ? 'font-extrabold text-slate-900' :
                 tpl === 'luxe' ? 'font-thin text-white' :
-                'font-black text-white tracking-tighter'
-              )}>
+                'font-extrabold text-white tracking-tighter'
+              )}
+              style={{ fontFamily: '"Plus Jakarta Sans", system-ui, sans-serif' }}
+              >
                 {newArrivalsLabel}
               </h2>
             </div>
             <button 
               onClick={() => setStorefrontView('shop')}
               className={cn(
-                "text-xs font-black uppercase tracking-wider transition-all",
-                tpl === 'clean' ? 'text-slate-600 hover:text-slate-900 bg-white border border-slate-200 px-4 py-2 rounded-xl shadow-2xs hover:bg-slate-50 flex items-center gap-2' :
+                "inline-flex items-center gap-1.5 sm:gap-2 text-xs sm:text-[13px] font-bold uppercase tracking-wider transition-all duration-200 shrink-0 cursor-pointer",
+                tpl === 'clean' ? 'text-slate-700 hover:text-slate-950 bg-white border border-slate-200 px-3.5 py-1.5 sm:px-5 sm:py-2.5 rounded-full shadow-2xs hover:bg-slate-50 hover:border-slate-300 active:scale-95' :
                 tpl === 'luxe' ? 'text-white/40 border-white/10 hover:text-white' :
-                'text-gray-500 border-gray-200 hover:border-gray-900'
+                'text-white/70 hover:text-white'
               )}
             >
-              {t('viewCollection')}
-              <ArrowRight className="size-3.5" />
+              <span>{t('viewCollection')}</span>
+              <ArrowRight className="size-3.5 transition-transform group-hover:translate-x-0.5" />
             </button>
           </div>
-          <div className={cn(
-            "grid grid-cols-2 lg:grid-cols-4",
-            tpl === 'clean' ? "gap-3 sm:gap-6" : "gap-4 lg:gap-8"
-          )}>
-            {newArrivals.map(product => (
-              <ProductCard 
-                key={product.id} 
-                product={product}
-                onQuickView={(slug) => { 
-                  useAppStore.getState().setSelectedProductSlug(slug); 
-                  useAppStore.getState().setStorefrontView('product'); 
-                }}
-                onAddToCart={(p) => { addItem(p, 1); openCart(); }}
-              />
-            ))}
-          </div>
+          {loading ? (
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-6">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <div key={i} className="aspect-[4/5] bg-slate-100 animate-pulse rounded-2xl" />
+              ))}
+            </div>
+          ) : newArrivals.length > 0 ? (
+            <div className={cn(
+              "grid grid-cols-2 lg:grid-cols-4",
+              tpl === 'clean' ? "gap-3 sm:gap-6" : "gap-4 lg:gap-8"
+            )}>
+              {newArrivals.map(product => (
+                <ProductCard 
+                  key={product.id} 
+                  product={product}
+                  onQuickView={(slug) => { 
+                    useAppStore.getState().setSelectedProductSlug(slug); 
+                    useAppStore.getState().setStorefrontView('product'); 
+                  }}
+                  onAddToCart={(p) => { addItem(p, 1); openCart(); }}
+                />
+              ))}
+            </div>
+          ) : (
+            <div className={cn(
+              "flex flex-col items-center justify-center gap-4 py-20 border border-dashed text-center",
+              tpl === 'clean' ? 'bg-slate-50/50 border-slate-200 rounded-[24px]' :
+              tpl === 'luxe' ? 'bg-[#12172A] border-white/5 rounded-none' :
+              'bg-gray-50 border-gray-200 rounded-3xl'
+            )}>
+              <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+                {t('collectionComingSoon')}
+              </p>
+              <button 
+                onClick={() => setStorefrontView('shop')}
+                className="text-xs font-black uppercase tracking-wider px-6 py-3 rounded-xl text-white shadow-md shadow-blue-100"
+                style={{ backgroundColor: primary }}
+              >
+                {t('viewCatalog')}
+              </button>
+            </div>
+          )}
         </section>
-  ) : null;
+  );
 
 
   // Trust / Reassurance Bar Section — permanently removed from storefront home page as requested
