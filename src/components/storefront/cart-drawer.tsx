@@ -90,7 +90,7 @@ function CartItem({
   // clean (default)
   return (
     <div key={key} className="flex gap-4 py-4">
-      <div className="h-20 w-16 shrink-0 rounded-xl overflow-hidden bg-slate-50 border border-slate-100">
+      <div className="h-20 w-16 shrink-0 rounded-none overflow-hidden bg-slate-50 border border-slate-200">
         {parsedImages[0]
           ? <img src={parsedImages[0]} alt={item.product.name} className="h-full w-full object-cover"/>
           : <div className="h-full w-full flex items-center justify-center"><Package className="size-5 text-slate-300"/></div>}
@@ -100,14 +100,14 @@ function CartItem({
           <div>
             <p className="text-sm font-bold text-slate-900 leading-tight line-clamp-2">{item.product.name}</p>
             <div className="mt-1 flex flex-wrap gap-1">
-              {item.selectedVariant && <span className="inline-block text-[10px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 font-medium">{item.selectedVariant}</span>}
-              {item.customNotes && <span className="inline-block text-[10px] px-2 py-0.5 rounded-full bg-blue-50 text-blue-600 font-medium line-clamp-1 max-w-[120px]">"{item.customNotes}"</span>}
+              {item.selectedVariant && <span className="inline-block text-[10px] px-2 py-0.5 rounded-none bg-slate-100 text-slate-500 font-medium">{item.selectedVariant}</span>}
+              {item.customNotes && <span className="inline-block text-[10px] px-2 py-0.5 rounded-none bg-blue-50 text-blue-600 font-medium line-clamp-1 max-w-[120px]">"{item.customNotes}"</span>}
             </div>
           </div>
           <button onClick={() => removeItem(item.product.id, item.selectedVariant, item.customNotes)} className="shrink-0 text-slate-300 hover:text-red-400 transition-colors p-0.5"><Trash2 className="size-3.5"/></button>
         </div>
         <div className="flex items-center justify-between mt-3">
-          <div className="flex items-center rounded-lg border border-slate-200 overflow-hidden">
+          <div className="flex items-center rounded-none border border-slate-200 overflow-hidden">
             <button onClick={() => updateQuantity(item.product.id, item.quantity - 1, item.selectedVariant, item.customNotes)} className="size-7 flex items-center justify-center text-slate-400 hover:bg-slate-50 transition-colors"><Minus className="size-3"/></button>
             <span className="w-7 text-center text-xs font-bold text-slate-800 tabular-nums">{item.quantity}</span>
             <button onClick={() => updateQuantity(item.product.id, item.quantity + 1, item.selectedVariant, item.customNotes)} className="size-7 flex items-center justify-center text-slate-400 hover:bg-slate-50 transition-colors"><Plus className="size-3"/></button>
@@ -147,7 +147,7 @@ function CleanCart() {
         <div className="flex-1 overflow-y-auto">
           {items.length === 0 ? (
             <div className="flex h-full flex-col items-center justify-center px-6 py-20 text-center gap-4">
-              <div className="size-18 rounded-3xl bg-slate-100/90 border border-slate-200/80 flex items-center justify-center shadow-2xs">
+              <div className="size-18 rounded-none bg-slate-100/90 border border-slate-200/80 flex items-center justify-center shadow-2xs">
                 <Package className="size-8 text-slate-400" />
               </div>
               <div className="space-y-1.5 max-w-xs">
@@ -156,7 +156,7 @@ function CleanCart() {
               </div>
               <button 
                 onClick={() => { closeCart(); setStorefrontView('shop'); }} 
-                className="mt-2 h-11 px-6 rounded-full text-xs font-black uppercase tracking-wider text-white transition-all shadow-md hover:opacity-95 active:scale-[0.98] cursor-pointer" 
+                className="mt-2 h-11 px-6 rounded-none text-xs font-black uppercase tracking-wider text-white transition-all shadow-md hover:opacity-95 active:scale-[0.98] cursor-pointer" 
                 style={{ backgroundColor: primary && primary !== '#4b7bec' ? primary : '#0F172A' }}
               >
                 {t('allProducts')}
@@ -178,7 +178,7 @@ function CleanCart() {
               <span className="flex items-center gap-1.5 text-[10px] text-slate-400 font-medium"><ShieldCheck className="size-3.5 text-emerald-500"/>{t('securePayment')}</span>
               <span className="flex items-center gap-1.5 text-[10px] text-slate-400 font-medium"><Tag className="size-3.5 text-blue-400"/>{t('codText')}</span>
             </div>
-            <button onClick={() => { closeCart(); setStorefrontView('checkout'); }} className="w-full h-12 rounded-xl flex items-center justify-center gap-2.5 text-[12px] font-black uppercase tracking-widest text-white transition-all hover:brightness-110 active:scale-[0.98] shadow-sm" style={{ backgroundColor: primary }}>
+            <button onClick={() => { closeCart(); setStorefrontView('checkout'); }} className="w-full h-12 rounded-none flex items-center justify-center gap-2.5 text-[12px] font-black uppercase tracking-widest text-white transition-all hover:brightness-110 active:scale-[0.98] shadow-sm" style={{ backgroundColor: primary }}>
               {t('checkoutNow')}<ArrowRight className="size-4"/>
             </button>
           </div>

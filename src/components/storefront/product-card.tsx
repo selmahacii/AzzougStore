@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo } from 'react';
-import { Heart, ShoppingCart, Eye, Zap } from 'lucide-react';
+import { Heart, ShoppingCart, Eye, Zap, Truck } from 'lucide-react';
 import { useCartStore } from '@/store/cart-store';
 import { useAppStore } from '@/store/app-store';
 import { formatPrice } from '@/lib/format';
@@ -229,6 +229,16 @@ function CleanCard({ product, primary, onQuickView, onAddToCart }: {
             )}
           </div>
 
+          {/* Delivery rate indicator visible in catalog */}
+          <div className="flex items-center gap-1 text-[10px] sm:text-[11px] font-bold text-slate-500">
+            <Truck className="size-3 text-slate-400 shrink-0" />
+            {(product as any).delivery_fees?.is_free ? (
+              <span className="text-emerald-600 font-extrabold uppercase tracking-tight">Livraison Gratuite</span>
+            ) : (
+              <span className="truncate">Livraison 58 Wilayas : <strong className="text-slate-800 font-black">dès 250 DA</strong></span>
+            )}
+          </div>
+
           {!isOutOfStock && (
             <button
               onClick={e => { 
@@ -238,8 +248,8 @@ function CleanCard({ product, primary, onQuickView, onAddToCart }: {
               className="w-full h-10 sm:h-11 px-2 text-[10px] sm:text-xs font-black uppercase tracking-wider text-white flex items-center justify-center gap-1.5 rounded-none transition-all shadow-2xs hover:opacity-95 active:scale-[0.98] bg-[#0F172A] hover:bg-[#1E293B] cursor-pointer whitespace-nowrap overflow-hidden"
               style={primary && primary !== '#4b7bec' ? { backgroundColor: primary } : undefined}
             >
-              <ShoppingCart className="size-3.5 sm:size-4 shrink-0" />
-              <span className="truncate">Ajouter au panier</span>
+              <Zap className="size-3.5 sm:size-4 shrink-0 fill-current" />
+              <span className="truncate">Commander maintenant</span>
             </button>
           )}
         </div>
@@ -380,7 +390,7 @@ function LuxeCard({ product, primary, onQuickView, onAddToCart }: {
               onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = primary; (e.currentTarget as HTMLButtonElement).style.color = '#0C0F1A'; }}
               onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = 'rgba(12,15,26,0.8)'; (e.currentTarget as HTMLButtonElement).style.color = primary; }}
             >
-              Ajouter — {formatPrice(product.price)}
+              Commander maintenant — {formatPrice(product.price)}
             </button>
           </div>
         ) : (

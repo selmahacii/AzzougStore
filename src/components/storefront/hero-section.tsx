@@ -289,7 +289,7 @@ function CleanHero({
             transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
             className="max-w-3xl mx-auto space-y-6"
           >
-            <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-slate-900/80 border border-white/20 text-white shadow-sm mx-auto">
+            <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-none bg-slate-900/80 border border-white/20 text-white shadow-sm mx-auto">
               <span className="size-2 rounded-full bg-emerald-400 animate-pulse" />
               <span className="text-[10px] font-black uppercase tracking-widest">
                 {resolvedTag}
@@ -310,14 +310,14 @@ function CleanHero({
             <div className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-4">
               <button
                 onClick={onShop}
-                className="w-full sm:w-auto h-12 px-8 rounded-2xl text-xs font-black uppercase tracking-wider text-white transition-all duration-200 flex items-center justify-center gap-2 shadow-lg shadow-blue-500/20 hover:opacity-95 active:scale-[0.98]"
+                className="w-full sm:w-auto h-12 px-8 rounded-none text-xs font-black uppercase tracking-wider text-white transition-all duration-200 flex items-center justify-center gap-2 shadow-lg shadow-blue-500/20 hover:opacity-95 active:scale-[0.98]"
                 style={{ backgroundColor: primary }}
               >
                 {cta} <ArrowRight className="size-4" />
               </button>
               <button
                 onClick={onScroll}
-                className="w-full sm:w-auto h-12 px-7 rounded-2xl text-xs font-bold uppercase tracking-wider text-white bg-white/15 hover:bg-white/25 border border-white/25 transition-all duration-200 flex items-center justify-center gap-2 cursor-pointer"
+                className="w-full sm:w-auto h-12 px-7 rounded-none text-xs font-bold uppercase tracking-wider text-white bg-white/15 hover:bg-white/25 border border-white/25 transition-all duration-200 flex items-center justify-center gap-2 cursor-pointer"
               >
                 {cta2} <ChevronDown className="size-4" />
               </button>
@@ -342,7 +342,7 @@ function CleanHero({
               className="max-w-xl w-full space-y-6"
             >
               {/* Badge Tag */}
-              <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-blue-50 text-[#4b7bec] border border-blue-100 shadow-2xs">
+              <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-none bg-blue-50 text-[#4b7bec] border border-blue-100 shadow-2xs">
                 <span className="size-2 rounded-full bg-[#4b7bec] animate-pulse" />
                 <span className="text-[10px] font-black uppercase tracking-wider">
                   {resolvedTag}
@@ -363,14 +363,14 @@ function CleanHero({
               <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3.5 pt-2">
                 <button
                   onClick={onShop}
-                  className="h-12 px-7 rounded-xl text-xs font-black uppercase tracking-wider text-white transition-all shadow-md shadow-blue-100 flex items-center justify-center gap-2 hover:opacity-95 active:scale-[0.98]"
+                  className="h-12 px-7 rounded-none text-xs font-black uppercase tracking-wider text-white transition-all shadow-md shadow-blue-100 flex items-center justify-center gap-2 hover:opacity-95 active:scale-[0.98]"
                   style={{ backgroundColor: primary }}
                 >
                   {cta} <ArrowRight className="size-4" />
                 </button>
                 <button
                   onClick={onScroll}
-                  className="h-12 px-6 rounded-xl text-xs font-bold uppercase tracking-wider text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 transition-all flex items-center justify-center gap-2 shadow-2xs"
+                  className="h-12 px-6 rounded-none text-xs font-bold uppercase tracking-wider text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 transition-all flex items-center justify-center gap-2 shadow-2xs"
                 >
                   {cta2}
                 </button>

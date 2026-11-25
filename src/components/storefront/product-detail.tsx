@@ -461,7 +461,7 @@ function CleanDetail() {
 
           <button 
             onClick={d.handleBack} 
-            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-slate-100 hover:bg-slate-200/80 text-[11px] font-bold text-slate-700 hover:text-slate-950 transition-all uppercase tracking-wider shrink-0 cursor-pointer shadow-2xs"
+            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-none bg-slate-100 hover:bg-slate-200/80 text-[11px] font-bold text-slate-700 hover:text-slate-950 transition-all uppercase tracking-wider shrink-0 cursor-pointer shadow-2xs border border-slate-200"
           >
             <ArrowLeft className="size-3" /> <span>Catalogue</span>
           </button>
@@ -533,7 +533,7 @@ function CleanDetail() {
                 {/* Category Pill only (disponible en stock removed as requested) */}
                 {p.category && (
                   <div className="flex items-center gap-2">
-                    <span className="px-3 py-1 rounded-full text-[10px] font-extrabold uppercase tracking-wider bg-slate-100 text-slate-700 border border-slate-200/60">
+                    <span className="px-3 py-1 rounded-none text-[10px] font-extrabold uppercase tracking-wider bg-slate-100 text-slate-700 border border-slate-200/80">
                       {p.category}
                     </span>
                   </div>
@@ -554,10 +554,22 @@ function CleanDetail() {
                     </span>
                   )}
                   {savingsAmount > 0 && (
-                    <span className="px-2.5 py-0.5 rounded-full text-[11px] font-extrabold uppercase bg-emerald-50 text-emerald-700 border border-emerald-200/80">
+                    <span className="px-2.5 py-0.5 rounded-none text-[11px] font-extrabold uppercase bg-emerald-50 text-emerald-700 border border-emerald-200/80">
                       Économisez {formatPrice(savingsAmount)}
                     </span>
                   )}
+                </div>
+
+                {/* Delivery rate banner visible on product */}
+                <div className="flex items-center gap-2 pt-1">
+                  <div className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-none text-xs font-semibold text-slate-700">
+                    <Truck className="size-3.5 text-slate-500 shrink-0" />
+                    {(p as any).delivery_fees?.is_free ? (
+                      <span className="text-emerald-600 font-extrabold uppercase">Livraison Gratuite</span>
+                    ) : (
+                      <span>Livraison 58 Wilayas : <strong className="text-slate-900 font-black">dès 250 DA</strong></span>
+                    )}
+                  </div>
                 </div>
 
                 {p.description && (
@@ -644,11 +656,11 @@ function CleanDetail() {
                 {/* Quantity & Actions */}
                 <div className="space-y-4 pt-2">
                   <div className="flex items-center gap-3">
-                    <div className="flex items-center bg-slate-100/90 border border-slate-200/80 rounded-full p-1 shadow-2xs">
+                    <div className="flex items-center bg-slate-100/90 border border-slate-300 rounded-none p-1 shadow-2xs">
                       <button 
                         type="button" 
                         onClick={() => handleQuantityChange(Math.max(1, quantity - 1))} 
-                        className="size-9 rounded-full flex items-center justify-center hover:bg-white text-slate-700 transition-all active:scale-95 cursor-pointer shadow-2xs"
+                        className="size-9 rounded-none flex items-center justify-center hover:bg-white text-slate-700 transition-all active:scale-95 cursor-pointer shadow-2xs"
                         title="Diminuer"
                       >
                         <Minus className="size-3.5" />
@@ -657,7 +669,7 @@ function CleanDetail() {
                       <button 
                         type="button" 
                         onClick={() => handleQuantityChange(quantity + 1)} 
-                        className="size-9 rounded-full flex items-center justify-center hover:bg-white text-slate-700 transition-all active:scale-95 cursor-pointer shadow-2xs"
+                        className="size-9 rounded-none flex items-center justify-center hover:bg-white text-slate-700 transition-all active:scale-95 cursor-pointer shadow-2xs"
                         title="Augmenter"
                       >
                         <Plus className="size-3.5" />
@@ -665,30 +677,22 @@ function CleanDetail() {
                     </div>
                   </div>
 
-                  {/* Dual CTA Buttons */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
+                  {/* Single High-Conversion Square CTA Button */}
+                  <div className="pt-2">
                     {!isOOS ? (
                       <button 
                         onClick={d.handleBuyNow}
-                        className="h-12 rounded-full flex items-center justify-center gap-2 text-xs sm:text-[13px] font-black uppercase tracking-wider text-white shadow-md transition-all hover:opacity-95 active:scale-[0.98] cursor-pointer bg-[#0F172A] hover:bg-[#1E293B]"
+                        className="w-full h-14 rounded-none flex items-center justify-center gap-2.5 text-sm sm:text-base font-black uppercase tracking-wider text-white shadow-md transition-all hover:opacity-95 active:scale-[0.98] cursor-pointer bg-[#0F172A] hover:bg-[#1E293B]"
                         style={primary && primary !== '#4b7bec' ? { backgroundColor: primary } : undefined}
                       >
-                        <Zap className="size-4 fill-current" />
+                        <Zap className="size-4.5 fill-current" />
                         <span>Commander maintenant</span>
                       </button>
-                    ) : null}
-                    
-                    <button 
-                      disabled={isOOS} 
-                      onClick={d.handleAddToCart}
-                      className="h-12 rounded-full flex items-center justify-center gap-2 text-xs sm:text-[13px] font-black uppercase tracking-wider transition-all disabled:opacity-50 disabled:cursor-not-allowed border-2 border-slate-900 text-slate-900 hover:bg-slate-50 active:scale-[0.98] cursor-pointer"
-                    >
-                      {d.addedToCart ? (
-                        <><CheckCircle className="size-4 text-emerald-600" /> {t('added')}</>
-                      ) : (
-                        <><ShoppingCart className="size-4" /> {t('addToCart')}</>
-                      )}
-                    </button>
+                    ) : (
+                      <div className="w-full h-14 rounded-none flex items-center justify-center text-xs font-black uppercase tracking-wider text-slate-400 bg-slate-100 border border-slate-200">
+                        Rupture de stock
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -950,7 +954,7 @@ function AthleticDetail() {
             )}
 
 
-            {/* Quantity Selector & Wishlist */}
+            {/* Quantity Selector */}
             <div className="space-y-3 pt-2 border-t border-white/5">
               <div className="flex items-center gap-3">
                 <div className="flex items-center border border-white/10">
@@ -958,10 +962,6 @@ function AthleticDetail() {
                   <span className="w-12 text-center text-sm font-black text-white tabular-nums">{quantity}</span>
                   <button type="button" onClick={() => handleQuantityChange(quantity + 1)} className="size-12 flex items-center justify-center text-white/40 hover:text-white hover:bg-white/5 transition-all"><Plus className="size-3.5"/></button>
                 </div>
-                <button type="button" onClick={d.handleToggleWishlist}
-                  className={`size-12 flex items-center justify-center border transition-all active:scale-95 ${wishlisted ? 'border-red-500/50 text-red-400' : 'border-white/10 text-white/20 hover:border-white/30 hover:text-white/50'}`}>
-                  <Heart className="size-4" fill={wishlisted ? 'currentColor' : 'none'}/>
-                </button>
               </div>
             </div>
               {!isOOS ? (
@@ -1206,7 +1206,7 @@ function LuxeDetail() {
             )}
 
 
-            {/* Quantity Selector & Wishlist */}
+            {/* Quantity Selector */}
             <div className="space-y-4 pt-4 border-t border-white/5">
               <div className="flex items-center gap-4">
                 <div className="flex items-center border border-white/10">
@@ -1214,10 +1214,6 @@ function LuxeDetail() {
                   <span className="w-12 text-center text-sm font-light text-white tabular-nums">{quantity}</span>
                   <button type="button" onClick={() => handleQuantityChange(quantity + 1)} className="size-10 flex items-center justify-center text-white/20 hover:text-white/60 transition-colors"><Plus className="size-3"/></button>
                 </div>
-                <button type="button" onClick={d.handleToggleWishlist}
-                  className={`size-10 flex items-center justify-center border transition-all ${wishlisted ? 'border-red-400/30 text-red-400' : 'border-white/10 text-white/20 hover:text-white/40'}`}>
-                  <Heart className="size-4" fill={wishlisted ? 'currentColor' : 'none'}/>
-                </button>
               </div>
             </div>
               {!isOOS ? (

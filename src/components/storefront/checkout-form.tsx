@@ -290,6 +290,69 @@ export function SearchableCommuneSelect({
   );
 }
 
+function calculateDeliveryFeeSync({
+  wilayaName,
+  deliveryType,
+  partner,
+  items,
+  cartSubtotal,
+}: {
+  wilayaName: string;
+  deliveryType: 'HOME' | 'OFFICE';
+  partner?: any;
+  items: CartItem[];
+  cartSubtotal: number;
+}): number {
+  if (!wilayaName) return 0;
+  
+  // 1. Free shipping if all items have is_free
+  const allFree = items.length > 0 && items.every(i => (i.product as any)?.delivery_fees?.is_free);
+  if (allFree) return 0;
+
+  // 2. Free shipping threshold from partner
+  if (partner?.free_shipping_threshold && cartSubtotal >= partner.free_shipping_threshold) {
+    return 0;
+  }
+
+  const wilayaId = (WILAYAS as readonly string[]).indexOf(wilayaName as any) + 1;
+
+  // 3. Check product custom fee exceptions if present
+  for (const item of items) {
+    const customFees = (item.product as any)?.delivery_fees?.fees;
+    if (customFees && partner?.id) {
+      const carrierCustom = customFees[partner.id] || customFees[partner.carrier_id] || customFees[partner.name];
+      if (carrierCustom && carrierCustom[wilayaId]) {
+        const rates = carrierCustom[wilayaId];
+        const fee = deliveryType === 'HOME' ? rates.home : (rates.desk || rates.office || rates.home);
+        if (typeof fee === 'number') return fee;
+      }
+    }
+  }
+
+  // 4. Check partner pricing_grid
+  if (partner && Array.isArray(partner.pricing_grid) && partner.pricing_grid.length > 0) {
+    const gridEntry = partner.pricing_grid.find((g: any) => g.wilaya_id === wilayaId);
+    if (gridEntry) {
+      const fee = deliveryType === 'HOME' ? Number(gridEntry.home_fee) : Number(gridEntry.office_fee);
+      if (fee > 0) return fee;
+    }
+  }
+
+  // 5. Fallback to partner flat fee
+  if (partner) {
+    const flatFee = deliveryType === 'HOME' ? Number(partner.fee_home) : Number(partner.fee_relay);
+    if (flatFee > 0) return flatFee;
+  }
+
+  // 6. Standard Algerian logistics fallback by Wilaya tier
+  if (wilayaId === 16) return deliveryType === 'HOME' ? 500 : 250;
+  if ([9, 35, 42].includes(wilayaId)) return deliveryType === 'HOME' ? 550 : 350;
+  if ([31, 25, 19].includes(wilayaId)) return deliveryType === 'HOME' ? 750 : 400;
+  if ([11, 33, 49, 53].includes(wilayaId)) return deliveryType === 'HOME' ? 1750 : 1000;
+  if ([8, 30, 32, 37, 39, 45, 47, 51, 52, 55, 57, 58].includes(wilayaId)) return deliveryType === 'HOME' ? 1100 : 500;
+  return deliveryType === 'HOME' ? 800 : 400;
+}
+
 export function CheckoutForm({ isInline = false, forceTemplate, children }: { isInline?: boolean; forceTemplate?: string; children?: React.ReactNode }) {
   const activeStore = useAppStore((s) => s.activeStore);
   const setStorefrontView = useAppStore((s) => s.setStorefrontView);
@@ -350,7 +413,18 @@ export function CheckoutForm({ isInline = false, forceTemplate, children }: { is
     return 0;
   }, [appliedPromo, cartSubtotal]);
 
-  const currentDeliveryFee = deliveryFee ?? 0;
+  const currentDeliveryFee = useMemo(() => {
+    if (!customerInfo.wilaya) return 0;
+    if (typeof deliveryFee === 'number') return deliveryFee;
+    const activePartner = availablePartners.find(p => p.id === selectedPartnerId) || availablePartners[0];
+    return calculateDeliveryFeeSync({
+      wilayaName: customerInfo.wilaya,
+      deliveryType: customerInfo.deliveryType,
+      partner: activePartner,
+      items,
+      cartSubtotal,
+    });
+  }, [deliveryFee, customerInfo.wilaya, customerInfo.deliveryType, availablePartners, selectedPartnerId, items, cartSubtotal]);
 
   const finalTotal = cartSubtotal - discountAmount + currentDeliveryFee;
 
@@ -395,18 +469,21 @@ export function CheckoutForm({ isInline = false, forceTemplate, children }: { is
   }, [items, activeStore]);
 
   useEffect(() => {
-    if (!customerInfo.wilaya || !activeStore || !selectedPartnerId) return;
+    if (!customerInfo.wilaya || !activeStore) return;
+    const pId = selectedPartnerId || availablePartners[0]?.id;
+    if (!pId) return;
     setDeliveryLoading(true);
     const productIds = items.map(i => i.product?.id || '').filter(Boolean).join(',');
-    fetch(`/api/v1/delivery-partners/calculate?partnerId=${selectedPartnerId}&wilayaId=${customerInfo.wilaya}&type=${customerInfo.deliveryType}&productIds=${productIds}`)
+    const wilayaId = (WILAYAS as readonly string[]).indexOf(customerInfo.wilaya as any) + 1;
+    fetch(`/api/v1/delivery-partners/calculate?partnerId=${pId}&wilayaId=${wilayaId || customerInfo.wilaya}&type=${customerInfo.deliveryType}&productIds=${productIds}`)
       .then(r => r.json())
       .then((res: any) => {
         const fee = res.success ? res.data?.fee : (res.fee ?? null);
-        setDeliveryFee(fee);
+        if (typeof fee === 'number') setDeliveryFee(fee);
       })
-      .catch(() => setDeliveryFee(null))
+      .catch(() => {})
       .finally(() => setDeliveryLoading(false));
-  }, [customerInfo.wilaya, customerInfo.deliveryType, activeStore, selectedPartnerId, items]);
+  }, [customerInfo.wilaya, customerInfo.deliveryType, activeStore, selectedPartnerId, availablePartners, items]);
 
   // Track abandoned cart
   useEffect(() => {

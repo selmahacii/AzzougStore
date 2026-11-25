@@ -116,7 +116,7 @@ const translations = {
     confirmTitle: 'Pour confirmer, veuillez saisir vos informations :',
     
     // Product Detail
-    addToCart: 'Ajouter au panier',
+    addToCart: 'Commander maintenant',
     description: 'Description',
     specification: 'Spécifications',
     reviewsTab: 'Avis',
@@ -318,7 +318,7 @@ const translations = {
     confirmTitle: 'Please enter your info below to confirm:',
     
     // Product Detail
-    addToCart: 'Add to Cart',
+    addToCart: 'Order now',
     description: 'Description',
     specification: 'Specifications',
     reviewsTab: 'Reviews',
@@ -520,7 +520,7 @@ const translations = {
     confirmTitle: 'للتأكيد يرجى إدخال معلوماتك هنا :',
     
     // Product Detail
-    addToCart: 'أضف إلى السلة',
+    addToCart: 'اطلب الآن',
     description: 'الوصف',
     specification: 'المواصفات',
     reviewsTab: 'التقييمات',

@@ -18,8 +18,8 @@ function TikTokIcon({ className }: { className?: string }) {
 
 function SocialLinks({ social, color, dark, isClean }: { social: Record<string, string>; color: string; dark?: boolean; isClean?: boolean }) {
   const cls = dark
-    ? 'size-8 rounded-xl border border-white/10 flex items-center justify-center hover:bg-white/10 transition-colors'
-    : 'size-8 rounded-xl bg-slate-50 border border-slate-200/80 flex items-center justify-center hover:bg-slate-900 text-slate-600 hover:text-white hover:border-slate-900 transition-all duration-200 group';
+    ? 'size-8 rounded-none border border-white/10 flex items-center justify-center hover:bg-white/10 transition-colors'
+    : 'size-8 rounded-none bg-slate-50 border border-slate-200/80 flex items-center justify-center hover:bg-slate-900 text-slate-600 hover:text-white hover:border-slate-900 transition-all duration-200 group';
   const iconCls = dark ? 'size-4 text-white/50' : 'size-3.5 transition-colors';
   return (
     <div className="flex gap-2">
@@ -66,10 +66,10 @@ function ContactBlock({ contact, color, dark, isClean }: { contact: Record<strin
   }
 
   return (
-    <div className="space-y-2 sm:space-y-3">
+    <div className="space-y-2 sm:space-y-2.5">
       {contact.phone && (
         <a href={`tel:${contact.phone}`} className={`flex items-center gap-2 sm:gap-2.5 transition-colors ${textCls}`}>
-          <div className="size-5 sm:size-6 rounded-lg bg-slate-100 flex items-center justify-center shrink-0">
+          <div className="size-5 sm:size-6 rounded-none border border-slate-200 bg-slate-50 flex items-center justify-center shrink-0">
             <Phone className="size-2.5 sm:size-3 shrink-0" style={{ color: iconColor }} />
           </div>
           <span className="text-[11px] sm:text-xs">{contact.phone}</span>
@@ -77,19 +77,19 @@ function ContactBlock({ contact, color, dark, isClean }: { contact: Record<strin
       )}
       {contact.email && (
         <a href={`mailto:${contact.email}`} className={`flex items-center gap-2 sm:gap-2.5 transition-colors ${textCls}`}>
-          <div className="size-5 sm:size-6 rounded-lg bg-slate-100 flex items-center justify-center shrink-0">
+          <div className="size-5 sm:size-6 rounded-none border border-slate-200 bg-slate-50 flex items-center justify-center shrink-0">
             <Mail className="size-2.5 sm:size-3 shrink-0" style={{ color: iconColor }} />
           </div>
           <span className="truncate text-[11px] sm:text-xs">{contact.email}</span>
         </a>
       )}
       {contact.address && (
-        <p className={`flex items-start gap-2 sm:gap-2.5 ${textCls}`}>
-          <div className="size-5 sm:size-6 rounded-lg bg-slate-100 flex items-center justify-center shrink-0 mt-0.5">
+        <div className={`flex items-start gap-2 sm:gap-2.5 ${textCls}`}>
+          <div className="size-5 sm:size-6 rounded-none border border-slate-200 bg-slate-50 flex items-center justify-center shrink-0 mt-0.5">
             <MapPin className="size-2.5 sm:size-3 shrink-0" style={{ color: iconColor }} />
           </div>
           <span className="text-[11px] sm:text-xs">{contact.address}</span>
-        </p>
+        </div>
       )}
     </div>
   );
@@ -114,7 +114,14 @@ export function StorefrontFooter() {
   const primary = (activeStore?.theme_config?.primaryColor as string | undefined) ?? '#4b7bec';
   const tagline = activeStore?.theme_config?.footerTagline as string | undefined;
   const copyright = (activeStore?.theme_config?.footerCopyright as string | undefined) ?? `© ${new Date().getFullYear()} ${storeName}. Tous droits réservés.`;
-  const contact = (activeStore?.theme_config?.contact ?? activeStore?.contact ?? {}) as Record<string, string>;
+  const rawContact = (activeStore?.theme_config?.contact ?? activeStore?.contact ?? {}) as Record<string, string>;
+  const contact: Record<string, string> = {
+    phone: (rawContact.phone && !rawContact.phone.includes('778 30 19 20') && !rawContact.phone.includes('778301920')) 
+      ? rawContact.phone 
+      : '0550 00 00 00',
+    email: rawContact.email || 'contact@maboutique.com',
+    address: rawContact.address || 'Alger, Algérie',
+  };
   const social = (activeStore?.social_links ?? {}) as Record<string, string>;
   const logoUrl = activeStore?.logo_url || activeStore?.logo || (activeStore?.theme_config?.logo as string) || null;
 
@@ -156,17 +163,17 @@ export function StorefrontFooter() {
         className="w-full bg-white border-t border-slate-200/80 text-slate-800"
         style={{ fontFamily: '"Plus Jakarta Sans", system-ui, -apple-system, sans-serif' }}
       >
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-6 sm:py-10 lg:py-14">
-          <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-12 gap-x-6 sm:gap-x-8 gap-y-5 sm:gap-y-8 lg:gap-12">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-4 sm:py-8 lg:py-12">
+          <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-12 gap-x-6 sm:gap-x-8 gap-y-4 sm:gap-y-6 lg:gap-10">
             
             {/* Store Brand & Presentation (Full width on mobile, 5 cols on lg) */}
-            <div className="col-span-2 lg:col-span-5 space-y-2.5 sm:space-y-4">
+            <div className="col-span-2 lg:col-span-5 space-y-2 sm:space-y-3.5">
               <div className="flex items-center gap-2.5 sm:gap-3">
-                <div className="size-9 sm:size-11 rounded-2xl bg-white border border-slate-200/80 p-1 flex items-center justify-center shrink-0 shadow-2xs">
+                <div className="size-9 sm:size-11 rounded-none bg-white border border-slate-200/80 p-1 flex items-center justify-center shrink-0 shadow-2xs">
                   {logoUrl ? (
                     <img src={logoUrl} alt={storeName} className="h-full w-full object-contain" />
                   ) : (
-                    <span className="text-xs sm:text-sm font-black text-white size-full rounded-xl flex items-center justify-center uppercase" style={{ backgroundColor: primary }}>
+                    <span className="text-xs sm:text-sm font-black text-white size-full rounded-none flex items-center justify-center uppercase" style={{ backgroundColor: primary }}>
                       {storeName.charAt(0)}
                     </span>
                   )}

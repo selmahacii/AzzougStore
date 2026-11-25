@@ -197,7 +197,7 @@ function CleanGrid({ storeId, primary, setStorefrontView }: { storeId: string; p
       <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-12 py-6 sm:py-8 lg:py-10 space-y-6">
 
         {/* Top Header Card (Meta Ads Style — 100% Responsive) */}
-        <div className="bg-white rounded-3xl border border-slate-200/80 p-5 sm:p-7 lg:p-8 shadow-2xs flex flex-col lg:flex-row items-start lg:items-center justify-between gap-5 sm:gap-6">
+        <div className="bg-white rounded-none border border-slate-200/90 p-5 sm:p-7 lg:p-8 shadow-2xs flex flex-col lg:flex-row items-start lg:items-center justify-between gap-5 sm:gap-6">
           <div className="w-full lg:w-auto space-y-1.5">
             <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-400">
               <button onClick={() => setStorefrontView('home')} className="hover:text-slate-900 transition-colors cursor-pointer">Accueil</button>
@@ -208,13 +208,13 @@ function CleanGrid({ storeId, primary, setStorefrontView }: { storeId: string; p
               <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-950 tracking-[-0.03em]">
                 {d.selectedCategory === 'all' ? 'Toutes les collections' : d.selectedCategory}
               </h1>
-              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-blue-500/10 text-blue-700 border border-blue-200/60 shadow-2xs">
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-none text-xs font-bold bg-blue-500/10 text-blue-700 border border-blue-200/60 shadow-2xs">
                 <span className="size-1.5 rounded-full bg-blue-600 animate-pulse" />
                 {d.total} {d.total > 1 ? 'articles' : 'article'}
               </span>
             </div>
             <p className="text-xs sm:text-sm text-slate-500 font-medium max-w-2xl leading-relaxed">
-              Parcourez notre catalogue officiel avec livraison rapide dans les 58 Wilayas et paiement cash à la livraison.
+              Parcourez notre catalogue officiel avec livraison dans les 58 Wilayas (dès 250 DA) et paiement cash à la livraison.
             </p>
           </div>
 
@@ -227,7 +227,7 @@ function CleanGrid({ storeId, primary, setStorefrontView }: { storeId: string; p
                 value={d.search}
                 onChange={e => d.setSearch(e.target.value)}
                 placeholder="Rechercher un produit..."
-                className="w-full h-11 pl-10 pr-9 text-xs font-medium rounded-full border border-slate-200/90 bg-slate-50/80 focus:bg-white focus:outline-none focus:ring-2 focus:ring-slate-900/10 focus:border-slate-400 transition-all shadow-2xs"
+                className="w-full h-11 pl-10 pr-9 text-xs font-medium rounded-none border border-slate-200/90 bg-slate-50/80 focus:bg-white focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900 transition-all shadow-2xs"
               />
               {d.search && (
                 <button onClick={() => d.setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer">
@@ -240,7 +240,7 @@ function CleanGrid({ storeId, primary, setStorefrontView }: { storeId: string; p
             <button
               onClick={() => setMobileFilterOpen(true)}
               className={cn(
-                "h-11 px-4 rounded-full border flex items-center gap-2 relative shrink-0 transition-all active:scale-95 shadow-2xs cursor-pointer text-xs font-bold",
+                "h-11 px-4 rounded-none border flex items-center gap-2 relative shrink-0 transition-all active:scale-95 shadow-2xs cursor-pointer text-xs font-bold",
                 activeFilterCount > 0 
                   ? "bg-slate-900 border-slate-900 text-white" 
                   : "bg-white border-slate-200 text-slate-700 hover:bg-slate-50"
@@ -250,14 +250,14 @@ function CleanGrid({ storeId, primary, setStorefrontView }: { storeId: string; p
               <Filter className="size-4" />
               <span>Filtres</span>
               {activeFilterCount > 0 && (
-                <span className="size-4.5 rounded-full bg-blue-600 text-white text-[9px] font-mono font-black flex items-center justify-center shadow-xs">
+                <span className="size-4.5 rounded-none bg-blue-600 text-white text-[9px] font-mono font-black flex items-center justify-center shadow-xs">
                   {activeFilterCount}
                 </span>
               )}
             </button>
 
             {/* Sort Selector */}
-            <div className="flex items-center gap-1.5 bg-white border border-slate-200/90 rounded-full px-3.5 h-11 shadow-2xs shrink-0 hover:border-slate-300 transition-all">
+            <div className="flex items-center gap-1.5 bg-white border border-slate-200/90 rounded-none px-3.5 h-11 shadow-2xs shrink-0 hover:border-slate-300 transition-all">
               <SlidersHorizontal className="size-3.5 text-slate-400 shrink-0" />
               <select 
                 value={d.sortBy} 
