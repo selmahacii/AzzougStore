@@ -214,7 +214,7 @@ function CleanGrid({ storeId, primary, setStorefrontView }: { storeId: string; p
               </span>
             </div>
             <p className="text-xs sm:text-sm text-slate-500 font-medium max-w-2xl leading-relaxed">
-              Parcourez notre catalogue officiel avec livraison dans les 58 Wilayas (dès 250 DA) et paiement cash à la livraison.
+              Parcourez notre catalogue officiel avec livraison rapide dans les 58 Wilayas et paiement cash à la livraison.
             </p>
           </div>
 

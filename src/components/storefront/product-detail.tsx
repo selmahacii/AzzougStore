@@ -561,17 +561,14 @@ function CleanDetail() {
                   )}
                 </div>
 
-                {/* Delivery rate banner visible on product */}
-                <div className="flex items-center gap-2 pt-1">
-                  <div className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-none text-xs font-semibold text-slate-700">
-                    <Truck className="size-3.5 text-slate-500 shrink-0" />
-                    {(p as any).delivery_fees?.is_free ? (
-                      <span className="text-emerald-600 font-extrabold uppercase">Livraison Gratuite</span>
-                    ) : (
-                      <span>Livraison 58 Wilayas : <strong className="text-slate-900 font-black">dès 250 DA</strong></span>
-                    )}
+                {(p as any).delivery_fees?.is_free && (
+                  <div className="flex items-center gap-2 pt-1">
+                    <div className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 border border-emerald-200 rounded-none text-xs font-semibold text-emerald-700">
+                      <Truck className="size-3.5 text-emerald-600 shrink-0" />
+                      <span className="font-extrabold uppercase">Livraison Gratuite</span>
+                    </div>
                   </div>
-                </div>
+                )}
 
                 {p.description && (
                   <p className="text-xs sm:text-sm text-slate-600 leading-relaxed font-medium pt-1">

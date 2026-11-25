@@ -247,15 +247,12 @@ function CleanCard({ product, primary, onQuickView, onAddToCart, onBuyNow }: {
             )}
           </div>
 
-          {/* Delivery rate indicator visible in catalog */}
-          <div className="flex items-center gap-1 text-[10px] sm:text-[11px] font-bold text-slate-500">
-            <Truck className="size-3 text-slate-400 shrink-0" />
-            {(product as any).delivery_fees?.is_free ? (
-              <span className="text-emerald-600 font-extrabold uppercase tracking-tight">Livraison Gratuite</span>
-            ) : (
-              <span className="truncate">Livraison 58 Wilayas : <strong className="text-slate-800 font-black">dès 250 DA</strong></span>
-            )}
-          </div>
+          {(product as any).delivery_fees?.is_free && (
+            <div className="flex items-center gap-1 text-[10px] sm:text-[11px] font-bold text-emerald-600">
+              <Truck className="size-3 text-emerald-500 shrink-0" />
+              <span className="uppercase tracking-tight font-extrabold">Livraison Gratuite</span>
+            </div>
+          )}
 
           {!isOutOfStock && (
             <div className="flex items-center gap-1.5 w-full">
