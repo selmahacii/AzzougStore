@@ -33,6 +33,7 @@ import { cn } from '@/lib/utils';
 import { WILAYAS } from '@/lib/wilaya-data';
 import { ALGERIAN_COMMUNES, getCommunesForWilaya } from '@/lib/algerian-communes';
 import { NOEST_BUREAUX } from '@/lib/noest-bureaux-data';
+import { optimizeCloudinaryUrl } from '@/lib/image-optimize';
 
 // ─── Interfaces & Types ───────────────────────────────────────────────────────
 
@@ -68,6 +69,7 @@ export type OrderLine = {
   color?: string;
   size?: string;
   is_upsell?: boolean;
+  image_url?: string;
 };
 
 // ─── Variant Normalizer ───────────────────────────────────────────────────────
@@ -396,6 +398,10 @@ export function ManualOrderModal({
       return false;
     }
 
+    const itemImg = selectedVariantObj?.image 
+      || selectedOrderProduct.main_image 
+      || (Array.isArray(selectedOrderProduct.images) ? selectedOrderProduct.images[0] : (typeof selectedOrderProduct.images === 'string' ? selectedOrderProduct.images : undefined));
+
     const newLine: OrderLine = {
       product_id: selectedOrderProduct.id,
       product_name: selectedOrderProduct.name,
@@ -405,6 +411,7 @@ export function ManualOrderModal({
       color: selectedColor || undefined,
       size: selectedSize || undefined,
       is_upsell: !!selectedOrderProduct.is_upsell_only,
+      image_url: itemImg || undefined,
     };
 
     setOrderLines(prev => {
@@ -996,6 +1003,26 @@ export function ManualOrderModal({
                       </span>
                     </div>
 
+                    {/* Square Product Photo & Information Card */}
+                    <div className="flex items-center gap-3.5 p-3 bg-white rounded-xl border border-slate-200">
+                      <div className="size-16 sm:size-20 aspect-square rounded-lg border border-slate-200 overflow-hidden shrink-0 bg-slate-50 flex items-center justify-center shadow-2xs">
+                        {(selectedVariantObj?.image || selectedOrderProduct.main_image || (Array.isArray(selectedOrderProduct.images) ? selectedOrderProduct.images[0] : null)) ? (
+                          <img 
+                            src={optimizeCloudinaryUrl(selectedVariantObj?.image || selectedOrderProduct.main_image || selectedOrderProduct.images[0], 160)} 
+                            alt={selectedOrderProduct.name} 
+                            className="size-full object-cover" 
+                          />
+                        ) : (
+                          <Package className="size-8 text-slate-300" />
+                        )}
+                      </div>
+                      <div className="min-w-0 flex-1 space-y-1">
+                        <p className="text-xs sm:text-sm font-black text-slate-900 truncate">{selectedOrderProduct.name}</p>
+                        <p className="text-xs font-mono font-black text-slate-800">{formatPrice(orderPrice)}</p>
+                        <p className="text-[10px] text-slate-400 font-mono">SKU: {selectedSku}</p>
+                      </div>
+                    </div>
+
                     {/* Variant Level 1 (Couleur / Modèle / Option) */}
                     {normalizedVariants.length > 0 && (
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -1151,24 +1178,40 @@ export function ManualOrderModal({
                   ) : (
                     <div className="border border-slate-200 rounded-2xl divide-y divide-slate-100 bg-white overflow-hidden shadow-xs">
                       {orderLines.map((line, idx) => (
-                        <div key={idx} className="p-3 sm:p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-slate-50/60 transition-colors">
-                          <div className="min-w-0 flex-1 space-y-1">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <p className="text-xs font-bold text-slate-900 truncate">{line.product_name}</p>
-                              {line.is_upsell && (
-                                <span className="text-[9px] px-1.5 py-0.5 rounded-md bg-purple-100 text-purple-700 border border-purple-200 font-black">
-                                  UPSELL ⚡
-                                </span>
-                              )}
-                              {(line.color || line.size) && (
-                                <span className="text-[10px] font-black text-[#6C5CE7] bg-indigo-50 px-2 py-0.5 rounded-md border border-indigo-100">
-                                  {[line.color, line.size].filter(Boolean).join(' / ')}
-                                </span>
+                        <div key={idx} className="p-3 sm:p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3.5 hover:bg-slate-50/60 transition-colors">
+                          <div className="flex items-center gap-3 min-w-0 flex-1">
+                            <div className="size-14 sm:size-16 aspect-square rounded-lg border border-slate-200 overflow-hidden shrink-0 bg-slate-50 flex items-center justify-center shadow-2xs">
+                              {line.image_url ? (
+                                <img src={optimizeCloudinaryUrl(line.image_url, 120)} alt={line.product_name} className="size-full object-cover" />
+                              ) : (
+                                <Package className="size-6 text-slate-300" />
                               )}
                             </div>
-                            <p className="text-[10px] text-slate-400 font-mono">
-                              SKU: {line.sku || '—'}
-                            </p>
+                            <div className="min-w-0 flex-1 space-y-1">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <p className="text-xs font-bold text-slate-900 truncate">{line.product_name}</p>
+                                {line.is_upsell && (
+                                  <span className="text-[9px] px-1.5 py-0.5 rounded-md bg-purple-100 text-purple-700 border border-purple-200 font-black">
+                                    UPSELL ⚡
+                                  </span>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-1.5 flex-wrap text-[10px] text-slate-600 font-mono">
+                                {line.color && (
+                                  <span className="bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded font-bold border border-indigo-100">
+                                    {line.color}
+                                  </span>
+                                )}
+                                {line.size && (
+                                  <span className="bg-purple-50 text-purple-700 px-2 py-0.5 rounded font-bold border border-purple-100">
+                                    {line.size}
+                                  </span>
+                                )}
+                                <span className="text-slate-400 font-mono">
+                                  SKU: {line.sku || '—'}
+                                </span>
+                              </div>
+                            </div>
                           </div>
 
                           {/* Interactive Price & Qty Steppers */}

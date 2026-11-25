@@ -1187,25 +1187,37 @@ export function CheckoutForm({ isInline = false, forceTemplate, children }: { is
                 return (
                   <div key={item.selectedVariant ? `${item.product.id}-${item.selectedVariant}` : item.product.id}
                     onClick={() => setSelectedProductSlug(item.product.slug)}
-                    className="flex items-center gap-3 p-3 border cursor-pointer transition-all"
+                    className="flex items-center gap-3.5 p-3.5 border cursor-pointer transition-all"
                     style={{ borderRadius: T.radius, borderColor: T.cardBorder, backgroundColor: T.cardBg }}>
-                    <div className="size-11 rounded-lg overflow-hidden border shrink-0 bg-slate-50 flex items-center justify-center"
-                      style={{ borderRadius: T.inputRadius, borderColor: T.cardBorder }}>
+                    <div className="size-16 sm:size-18 aspect-square rounded-none overflow-hidden border shrink-0 bg-slate-50 flex items-center justify-center shadow-2xs"
+                      style={{ borderColor: T.cardBorder }}>
                       {item.image_url ? (
-                        <img src={optimizeCloudinaryUrl(item.image_url, 100)} alt={item.product.name} className="size-full object-cover" />
+                        <img src={optimizeCloudinaryUrl(item.image_url, 150)} alt={item.product.name} className="size-full object-cover" />
                       ) : item.product.main_image ? (
-                        <img src={optimizeCloudinaryUrl(item.product.main_image, 100)} alt={item.product.name} className="size-full object-cover" />
+                        <img src={optimizeCloudinaryUrl(item.product.main_image, 150)} alt={item.product.name} className="size-full object-cover" />
                       ) : (
                         <span className="text-sm font-black" style={{ color: T.textSecondary }}>
                           {item.product.name?.charAt(0) || 'P'}
                         </span>
                       )}
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-bold truncate" style={{ color: T.textPrimary }}>{item.product.name}</p>
-                      <p className="text-xs" style={{ color: T.textSecondary }}>
-                        {formatPrice(item.product.price + modifier)} × {item.quantity}{item.selectedVariant ? ` · ${item.selectedVariant}` : ''}
-                      </p>
+                    <div className="flex-1 min-w-0 space-y-1">
+                      <p className="text-sm font-extrabold truncate" style={{ color: T.textPrimary }}>{item.product.name}</p>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        {item.selectedVariant && (
+                          <span className="inline-block text-[10px] font-bold px-2 py-0.5 rounded-none bg-slate-100 border border-slate-200" style={{ color: T.textPrimary }}>
+                            {item.selectedVariant}
+                          </span>
+                        )}
+                        {item.customNotes && (
+                          <span className="inline-block text-[10px] font-medium px-2 py-0.5 rounded-none bg-blue-50 text-blue-700 border border-blue-200 italic">
+                            "{item.customNotes}"
+                          </span>
+                        )}
+                        <span className="text-xs font-semibold tabular-nums" style={{ color: T.textSecondary }}>
+                          {formatPrice(item.product.price + modifier)} × {item.quantity}
+                        </span>
+                      </div>
                     </div>
                     <span className="text-sm font-black shrink-0 tabular-nums" style={{ color: T.textPrimary }}>{formatPrice(lineTotal)}</span>
                   </div>

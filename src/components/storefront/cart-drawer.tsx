@@ -33,17 +33,17 @@ function CartItem({
 
   if (variant === 'athletic') return (
     <div key={key} className="flex gap-3 py-4 border-b border-white/5">
-      <div className="h-20 w-16 shrink-0 overflow-hidden bg-white/5">
+      <div className="size-16 aspect-square shrink-0 overflow-hidden bg-white/5 rounded-none border border-white/10">
         {parsedImages[0]
-          ? <img src={parsedImages[0]} alt={item.product.name} className="h-full w-full object-cover"/>
-          : <div className="h-full w-full flex items-center justify-center"><Package className="size-5 text-white/20"/></div>}
+          ? <img src={parsedImages[0]} alt={item.product.name} className="size-full object-cover"/>
+          : <div className="size-full flex items-center justify-center"><Package className="size-5 text-white/20"/></div>}
       </div>
       <div className="flex flex-1 flex-col justify-between min-w-0">
         <div className="flex items-start justify-between gap-2">
           <div>
             <p className="text-xs font-black uppercase tracking-wide text-white leading-tight line-clamp-2">{item.product.name}</p>
-            {item.selectedVariant && <span className="mt-1 mr-1 inline-block text-[9px] px-2 py-0.5 bg-white/5 text-white/40 font-bold uppercase tracking-widest">{item.selectedVariant}</span>}
-            {item.customNotes && <span className="mt-1 inline-block text-[9px] px-2 py-0.5 bg-white/10 text-white/60 font-bold tracking-widest">"{item.customNotes}"</span>}
+            {item.selectedVariant && <span className="mt-1 mr-1 inline-block text-[9px] px-2 py-0.5 bg-white/5 text-white/40 font-bold uppercase tracking-widest rounded-none">{item.selectedVariant}</span>}
+            {item.customNotes && <span className="mt-1 inline-block text-[9px] px-2 py-0.5 bg-white/10 text-white/60 font-bold tracking-widest rounded-none">"{item.customNotes}"</span>}
           </div>
           <button onClick={() => removeItem(item.product.id, item.selectedVariant, item.customNotes)} className="shrink-0 text-white/20 hover:text-red-400 transition-colors p-0.5"><Trash2 className="size-3.5"/></button>
         </div>
@@ -61,10 +61,10 @@ function CartItem({
 
   if (variant === 'luxe') return (
     <div key={key} className="flex gap-4 py-5 border-b border-white/5">
-      <div className="h-24 w-18 shrink-0 overflow-hidden border border-white/5" style={{ width: '4.5rem' }}>
+      <div className="size-18 aspect-square shrink-0 overflow-hidden border border-white/5 rounded-none" style={{ width: '4.5rem', height: '4.5rem' }}>
         {parsedImages[0]
-          ? <img src={parsedImages[0]} alt={item.product.name} className="h-full w-full object-cover"/>
-          : <div className="h-full w-full flex items-center justify-center bg-white/5"><Package className="size-5 text-white/15"/></div>}
+          ? <img src={parsedImages[0]} alt={item.product.name} className="size-full object-cover"/>
+          : <div className="size-full flex items-center justify-center bg-white/5"><Package className="size-5 text-white/15"/></div>}
       </div>
       <div className="flex flex-1 flex-col justify-between min-w-0">
         <div className="flex items-start justify-between gap-2">
@@ -90,18 +90,26 @@ function CartItem({
   // clean (default)
   return (
     <div key={key} className="flex gap-4 py-4">
-      <div className="h-20 w-16 shrink-0 rounded-none overflow-hidden bg-slate-50 border border-slate-200">
+      <div className="size-18 aspect-square shrink-0 rounded-none overflow-hidden bg-slate-50 border border-slate-200">
         {parsedImages[0]
-          ? <img src={parsedImages[0]} alt={item.product.name} className="h-full w-full object-cover"/>
-          : <div className="h-full w-full flex items-center justify-center"><Package className="size-5 text-slate-300"/></div>}
+          ? <img src={parsedImages[0]} alt={item.product.name} className="size-full object-cover"/>
+          : <div className="size-full flex items-center justify-center"><Package className="size-5 text-slate-300"/></div>}
       </div>
       <div className="flex flex-1 flex-col justify-between min-w-0">
         <div className="flex items-start justify-between gap-2">
           <div>
             <p className="text-sm font-bold text-slate-900 leading-tight line-clamp-2">{item.product.name}</p>
-            <div className="mt-1 flex flex-wrap gap-1">
-              {item.selectedVariant && <span className="inline-block text-[10px] px-2 py-0.5 rounded-none bg-slate-100 text-slate-500 font-medium">{item.selectedVariant}</span>}
-              {item.customNotes && <span className="inline-block text-[10px] px-2 py-0.5 rounded-none bg-blue-50 text-blue-600 font-medium line-clamp-1 max-w-[120px]">"{item.customNotes}"</span>}
+            <div className="mt-1.5 flex flex-wrap gap-1.5">
+              {item.selectedVariant && (
+                <span className="inline-block text-[10px] font-bold px-2 py-0.5 rounded-none bg-slate-100 text-slate-700 border border-slate-200">
+                  {item.selectedVariant}
+                </span>
+              )}
+              {item.customNotes && (
+                <span className="inline-block text-[10px] font-medium px-2 py-0.5 rounded-none bg-blue-50 text-blue-700 border border-blue-200 line-clamp-1 max-w-[140px] italic">
+                  "{item.customNotes}"
+                </span>
+              )}
             </div>
           </div>
           <button onClick={() => removeItem(item.product.id, item.selectedVariant, item.customNotes)} className="shrink-0 text-slate-300 hover:text-red-400 transition-colors p-0.5"><Trash2 className="size-3.5"/></button>
