@@ -4,6 +4,7 @@ import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import {
   ArrowLeft, ArrowRight, Check, CheckCircle, Package, ShoppingBag,
   MapPin, User, Loader2, Tag, X, Phone, Home, Building2, ShieldCheck, Truck, Search,
+  Minus, Plus, Trash2,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -359,6 +360,8 @@ export function CheckoutForm({ isInline = false, forceTemplate, children }: { is
   const setSelectedProductSlug = useAppStore((s) => s.setSelectedProductSlug);
   const items = useCartStore((s) => s.items);
   const totalPrice = useCartStore((s) => s.totalPrice);
+  const updateQuantity = useCartStore((s) => s.updateQuantity);
+  const removeItem = useCartStore((s) => s.removeItem);
   const clearCart = useCartStore((s) => s.clearCart);
   const { t, dir } = useTranslation();
 
@@ -427,6 +430,12 @@ export function CheckoutForm({ isInline = false, forceTemplate, children }: { is
   }, [deliveryFee, customerInfo.wilaya, customerInfo.deliveryType, availablePartners, selectedPartnerId, items, cartSubtotal]);
 
   const finalTotal = cartSubtotal - discountAmount + currentDeliveryFee;
+
+  useEffect(() => {
+    if (!isInline && typeof window !== 'undefined') {
+      window.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior });
+    }
+  }, [step, isInline]);
 
   useEffect(() => {
     if (!items.length) return;
@@ -754,17 +763,28 @@ export function CheckoutForm({ isInline = false, forceTemplate, children }: { is
 
   return (
     <div style={{ backgroundColor: isInline ? 'transparent' : T.pageBg }} className={isInline ? "" : "min-h-screen"} dir={dir}>
-      <div className={isInline ? "w-full py-2" : "mx-auto max-w-2xl px-4 py-10 sm:px-6"}>
-        {/* Title */}
+      <div className={isInline ? "w-full py-2" : "mx-auto max-w-2xl px-3.5 py-5 sm:px-6 sm:py-8"}>
+        {/* Top Back & Title */}
         {T.tpl !== 'dz_cod' && !isInline && (
-          <div className="mb-8">
-            <h1 className="text-2xl font-black tracking-tight"
-              style={{ color: T.textPrimary, letterSpacing: T.tpl === 'athletic' ? '0.05em' : undefined, textTransform: T.tpl !== 'clean' ? 'uppercase' : undefined }}>
-              {T.tpl === 'athletic' ? 'FINALISER' : T.tpl === 'luxe' ? t('confirmedTitleLuxe') : t('deliveryInfo')}
-            </h1>
-            <p className="text-xs mt-1 font-medium" style={{ color: T.textSecondary }}>
-              {T.tpl === 'athletic' ? 'PAIEMENT À LA LIVRAISON · SÉCURISÉ' : T.tpl === 'luxe' ? 'Livraison sécurisée · Paiement à réception' : t('paymentOnDeliverySecure')}
-            </p>
+          <div className="mb-5 flex items-center justify-between gap-3 pb-3 border-b" style={{ borderColor: T.dividerColor }}>
+            <div>
+              <h1 className="text-lg sm:text-xl font-black tracking-tight"
+                style={{ color: T.textPrimary, letterSpacing: T.tpl === 'athletic' ? '0.05em' : undefined, textTransform: T.tpl !== 'clean' ? 'uppercase' : undefined }}>
+                {T.tpl === 'athletic' ? 'FINALISER' : T.tpl === 'luxe' ? t('confirmedTitleLuxe') : t('deliveryInfo')}
+              </h1>
+              <p className="text-[11px] sm:text-xs mt-0.5 font-medium" style={{ color: T.textSecondary }}>
+                {T.tpl === 'athletic' ? 'PAIEMENT À LA LIVRAISON · SÉCURISÉ' : T.tpl === 'luxe' ? 'Livraison sécurisée · Paiement à réception' : t('paymentOnDeliverySecure')}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setStorefrontView('shop')}
+              className="shrink-0 inline-flex items-center gap-1.5 px-3 py-2 text-xs font-bold border transition-colors hover:opacity-80 cursor-pointer rounded-none"
+              style={{ borderColor: T.cardBorder, color: T.textSecondary, backgroundColor: T.cardBg }}
+            >
+              <ArrowLeft className="size-3.5" />
+              <span>{t('back') || 'Retour'}</span>
+            </button>
           </div>
         )}
 
@@ -788,18 +808,130 @@ export function CheckoutForm({ isInline = false, forceTemplate, children }: { is
           }
         `}</style>
 
-        {/* ── STEP 0: Informations de livraison ── */}
+        {/* ── STEP 0: Détails du panier (en haut) + Informations de livraison ── */}
         {step === 0 && (
           <div className="space-y-5">
-            {!isInline && (
-              <div className="text-center mb-6">
-                <h2 className="text-lg sm:text-xl font-black uppercase tracking-tight"
-                  style={{ color: T.textPrimary }}>
-                  {dir === 'rtl' ? 'معلومات التوصيل' : t('deliveryInfo') || 'Informations de livraison'}
-                </h2>
-                <p className="text-xs mt-1 font-medium" style={{ color: T.textSecondary }}>
-                  {dir === 'rtl' ? 'يرجى ملء الاستمارة لتأكيد طلبك' : t('deliveryInfoDesc') || 'Veuillez remplir le formulaire pour confirmer votre commande'}
-                </p>
+            {/* Section tout en haut : Détails du panier (photo, nom, variantes achetées) */}
+            {!isInline && items.length > 0 && (
+              <div className="border overflow-hidden shadow-2xs rounded-none" style={{ borderColor: T.cardBorder, backgroundColor: T.cardBg }}>
+                <div className="px-4 py-3 border-b flex items-center justify-between" style={{ borderColor: T.dividerColor, backgroundColor: T.summaryBg }}>
+                  <div className="flex items-center gap-2">
+                    <ShoppingBag className="size-4" style={{ color: T.primary }} />
+                    <span className="text-xs font-black uppercase tracking-wider" style={{ color: T.textPrimary }}>
+                      {dir === 'rtl' ? 'تفاصيل السلة' : 'Détails du panier'}
+                    </span>
+                    <span className="px-2 py-0.5 text-[10px] font-black rounded-none border" style={{ borderColor: T.cardBorder, color: T.textSecondary, backgroundColor: T.cardBg }}>
+                      {items.reduce((sum, i) => sum + i.quantity, 0)}
+                    </span>
+                  </div>
+                  <span className="text-xs sm:text-sm font-black tabular-nums" style={{ color: T.primary }}>
+                    {formatPrice(cartSubtotal)}
+                  </span>
+                </div>
+
+                <div className="divide-y" style={{ borderColor: T.dividerColor }}>
+                  {items.map((item: CartItem) => {
+                    if (!item?.product) return null;
+                    const modifier = item.selectedVariant && item.product.variants
+                      ? (item.product.variants.find(v => v.value === item.selectedVariant)?.priceModifier ?? 0) : 0;
+                    const unitPrice = item.customPrice !== undefined && item.customPrice !== null
+                      ? item.customPrice
+                      : item.product.price + modifier;
+                    const lineTotal = unitPrice * item.quantity;
+                    const imgSrc = item.image_url || item.product.main_image;
+
+                    return (
+                      <div
+                        key={item.selectedVariant ? `${item.product.id}-${item.selectedVariant}-${item.customNotes || ''}` : `${item.product.id}-${item.customNotes || ''}`}
+                        className="flex items-start sm:items-center gap-3.5 p-3.5 sm:p-4"
+                      >
+                        {/* Photo produit carrée */}
+                        <div
+                          onClick={() => { setSelectedProductSlug(item.product.slug); setStorefrontView('product'); }}
+                          className="size-16 sm:size-20 aspect-square rounded-none overflow-hidden border shrink-0 bg-slate-50 flex items-center justify-center cursor-pointer shadow-2xs"
+                          style={{ borderColor: T.cardBorder }}
+                        >
+                          {imgSrc ? (
+                            <img src={optimizeCloudinaryUrl(imgSrc, 200)} alt={item.product.name} className="size-full object-cover" />
+                          ) : (
+                            <span className="text-sm font-black" style={{ color: T.textSecondary }}>
+                              {item.product.name?.charAt(0) || 'P'}
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Nom produit + Variantes achetées + Contrôle quantité */}
+                        <div className="flex-1 min-w-0 space-y-1.5">
+                          <div className="flex items-start justify-between gap-2">
+                            <p
+                              onClick={() => { setSelectedProductSlug(item.product.slug); setStorefrontView('product'); }}
+                              className="text-xs sm:text-sm font-extrabold leading-snug line-clamp-2 cursor-pointer hover:underline"
+                              style={{ color: T.textPrimary }}
+                            >
+                              {item.product.name}
+                            </p>
+                            {items.length > 1 && (
+                              <button
+                                type="button"
+                                onClick={() => removeItem(item.product.id, item.selectedVariant, item.customNotes)}
+                                title="Supprimer"
+                                className="p-1 text-slate-400 hover:text-red-500 transition-colors shrink-0 cursor-pointer"
+                              >
+                                <Trash2 className="size-3.5" />
+                              </button>
+                            )}
+                          </div>
+
+                          {/* Variantes achetées */}
+                          {(item.selectedVariant || item.customNotes) && (
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              {item.selectedVariant && (
+                                <span className="inline-flex items-center px-2 py-0.5 text-[10px] font-bold rounded-none bg-slate-100 border border-slate-200 text-slate-800">
+                                  {item.selectedVariant}
+                                </span>
+                              )}
+                              {item.customNotes && (
+                                <span className="inline-flex items-center px-2 py-0.5 text-[10px] font-medium rounded-none bg-blue-50 text-blue-700 border border-blue-200 italic">
+                                  &quot;{item.customNotes}&quot;
+                                </span>
+                              )}
+                            </div>
+                          )}
+
+                          {/* Quantité et Prix ligne */}
+                          <div className="flex items-center justify-between gap-2 pt-0.5">
+                            <div className="inline-flex items-center border rounded-none bg-slate-50" style={{ borderColor: T.cardBorder }}>
+                              <button
+                                type="button"
+                                onClick={() => updateQuantity(item.product.id, Math.max(1, item.quantity - 1), item.selectedVariant, item.customNotes)}
+                                className="size-6 sm:size-7 flex items-center justify-center text-slate-600 hover:bg-white transition-colors cursor-pointer"
+                                title="Diminuer"
+                              >
+                                <Minus className="size-3" />
+                              </button>
+                              <span className="w-7 text-center text-xs font-black tabular-nums" style={{ color: T.textPrimary }}>
+                                {item.quantity}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => updateQuantity(item.product.id, item.quantity + 1, item.selectedVariant, item.customNotes)}
+                                className="size-6 sm:size-7 flex items-center justify-center text-slate-600 hover:bg-white transition-colors cursor-pointer"
+                                title="Augmenter"
+                              >
+                                <Plus className="size-3" />
+                              </button>
+                            </div>
+                            <div className="text-right">
+                              <span className="text-xs sm:text-sm font-black tabular-nums" style={{ color: T.textPrimary }}>
+                                {formatPrice(lineTotal)}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             )}
 
@@ -913,9 +1045,9 @@ export function CheckoutForm({ isInline = false, forceTemplate, children }: { is
               </div>
             ) : (
               // Standard checkout form
-              <>
+              <div className="border p-4 sm:p-6 space-y-4 sm:space-y-5 shadow-2xs rounded-none" style={{ borderColor: T.cardBorder, backgroundColor: T.cardBg }}>
                 {/* Nom */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 sm:gap-4">
                   {[
                     { id: 'firstName', label: t('firstName'), placeholder: 'Mohamed', key: 'firstName' as const, err: errors.firstName },
                     { id: 'lastName',  label: t('lastName'),    placeholder: 'Benali',  key: 'lastName'  as const, err: errors.lastName  },
@@ -924,21 +1056,21 @@ export function CheckoutForm({ isInline = false, forceTemplate, children }: { is
                       <label htmlFor={f.id} className="text-[10px] font-bold uppercase tracking-widest" style={{ color: T.labelColor }}>{f.label}</label>
                       <Input id={f.id} placeholder={f.placeholder} value={customerInfo[f.key]}
                         onChange={e => setCustomerInfo({ ...customerInfo, [f.key]: e.target.value })}
-                        className={`co-input text-sm h-11 ${f.err ? 'border-red-400!' : ''}`} />
+                        className={`co-input text-[16px] sm:text-sm h-11 ${f.err ? 'border-red-400!' : ''}`} />
                       {f.err && <p className="text-[10px] text-red-400">{f.err}</p>}
                     </div>
                   ))}
                 </div>
 
                 {/* Téléphone */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 sm:gap-4">
                   <div className="space-y-1.5">
                     <label htmlFor="phone" className="text-[10px] font-bold uppercase tracking-widest flex items-center gap-1.5" style={{ color: T.labelColor }}>
                       <Phone className="size-3" /> {t('phone')}
                     </label>
                     <Input id="phone" type="tel" placeholder="0555 123 456" value={customerInfo.phone}
                       onChange={e => setCustomerInfo({ ...customerInfo, phone: e.target.value })}
-                      className={`co-input text-sm h-11 font-mono ${errors.phone ? 'border-red-400!' : ''}`}
+                      className={`co-input text-[16px] sm:text-sm h-11 font-mono ${errors.phone ? 'border-red-400!' : ''}`}
                       dir="ltr" style={{ textAlign: 'left' }} />
                     {errors.phone && <p className="text-[10px] text-red-400">{errors.phone}</p>}
                   </div>
@@ -948,7 +1080,7 @@ export function CheckoutForm({ isInline = false, forceTemplate, children }: { is
                     </label>
                     <Input id="phone2" type="tel" placeholder="0661 234 567" value={customerInfo.phone2}
                       onChange={e => setCustomerInfo({ ...customerInfo, phone2: e.target.value })}
-                      className={`co-input text-sm h-11 font-mono ${errors.phone2 ? 'border-red-400!' : ''}`}
+                      className={`co-input text-[16px] sm:text-sm h-11 font-mono ${errors.phone2 ? 'border-red-400!' : ''}`}
                       dir="ltr" style={{ textAlign: 'left' }} />
                     {errors.phone2 && <p className="text-[10px] text-red-400">{errors.phone2}</p>}
                   </div>
@@ -960,7 +1092,7 @@ export function CheckoutForm({ isInline = false, forceTemplate, children }: { is
                     <MapPin className="size-3" /> {t('wilaya')}
                   </label>
                   <Select value={customerInfo.wilaya} onValueChange={v => setCustomerInfo({ ...customerInfo, wilaya: v })}>
-                    <SelectTrigger id="wilaya" className={`co-select h-11 text-sm w-full ${errors.wilaya ? 'border-red-400!' : ''}`}
+                    <SelectTrigger id="wilaya" className={`co-select h-11 text-[16px] sm:text-sm w-full ${errors.wilaya ? 'border-red-400!' : ''}`}
                       style={{ backgroundColor: T.inputBg, borderColor: T.inputBorder, color: customerInfo.wilaya ? T.inputText : T.inputPlaceholder, borderRadius: T.inputRadius }}>
                       <SelectValue placeholder={t('selectWilaya')} />
                     </SelectTrigger>
@@ -974,7 +1106,7 @@ export function CheckoutForm({ isInline = false, forceTemplate, children }: { is
                 </div>
 
                 {/* Commune + Adresse */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 sm:gap-4">
                   <div className="space-y-1.5">
                     <label htmlFor="commune" className="text-[10px] font-bold uppercase tracking-widest" style={{ color: T.labelColor }}>
                       {t('commune')}
@@ -1020,11 +1152,11 @@ export function CheckoutForm({ isInline = false, forceTemplate, children }: { is
 
 
                 {/* Type de livraison */}
-                <div className="space-y-2 pt-2">
+                <div className="space-y-2 pt-1">
                   <label className="text-[10px] font-bold uppercase tracking-widest flex items-center gap-1.5" style={{ color: T.labelColor }}>
                     <MapPin className="size-3" /> {t('remiseMode')}
                   </label>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="grid grid-cols-2 gap-2.5 sm:gap-3">
                     {[
                       { value: 'HOME' as DeliveryType, label: t('homeDelivery'), icon: Home, desc: t('homeDeliveryDesc') },
                       { value: 'OFFICE' as DeliveryType, label: t('stopDesk'), icon: Building2, desc: t('stopDeskDesc') },
@@ -1080,7 +1212,7 @@ export function CheckoutForm({ isInline = false, forceTemplate, children }: { is
                       <Input placeholder="CODE PROMO" value={promoCode} maxLength={20}
                         onChange={e => { setPromoCode(e.target.value.toUpperCase()); setPromoError(''); }}
                         onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleApplyPromo(); } }}
-                        className={`co-input flex-1 text-sm font-mono uppercase tracking-wider h-11 ${promoError ? 'border-red-400!' : ''}`} />
+                        className={`co-input flex-1 text-[16px] sm:text-sm font-mono uppercase tracking-wider h-11 ${promoError ? 'border-red-400!' : ''}`} />
                       <button type="button" onClick={handleApplyPromo} disabled={promoLoading || !promoCode.trim()}
                         className="px-4 border text-xs font-bold transition-all disabled:opacity-40"
                         style={{ borderRadius: T.radius, borderColor: T.cardBorder, color: T.textSecondary, backgroundColor: T.cardBg }}>
@@ -1090,7 +1222,7 @@ export function CheckoutForm({ isInline = false, forceTemplate, children }: { is
                   )}
                   {promoError && <p className="text-[10px] text-red-400">{promoError}</p>}
                 </div>
-              </>
+              </div>
             )}
 
 

@@ -28,6 +28,15 @@ export function StorefrontApp() {
   const isLanding = activeStore?.template_id === 'landing' || activeStore?.theme_config?.useLandingPage === true;
 
   const setLocale = useAppStore((s) => (s as any).setLocale);
+
+  useEffect(() => {
+    if (prevView.current !== storefrontView) {
+      prevView.current = storefrontView;
+      if (typeof window !== 'undefined') {
+        window.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior });
+      }
+    }
+  }, [storefrontView]);
   const setStorefrontView = useAppStore((s) => s.setStorefrontView);
 
   // Synchronize storefrontView with browser history (back button)
