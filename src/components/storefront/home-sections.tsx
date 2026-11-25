@@ -110,9 +110,9 @@ export function HomeSections() {
   // Section visibility + order — configurable per store via
   // theme_config.sectionsConfig (see store-wizard.tsx's Sections step).
   // Falls back to enabled sections in the original fixed order when unset.
-  // Reassurance trustBar is permanently excluded from home page as requested.
+  // Reassurance trustBar and bestSellers are excluded from home page as requested.
   const sectionsOrder = (activeStore.theme_config?.sectionsConfig ?? DEFAULT_HOME_SECTIONS)
-    .filter(s => s.enabled && s.key !== 'trustBar')
+    .filter(s => s.enabled && s.key !== 'trustBar' && s.key !== 'bestSellers')
     .map(s => s.key);
 
   const bestSellersSection = (
@@ -429,7 +429,7 @@ export function HomeSections() {
 
   const SECTION_MAP: Record<string, ReactNode> = {
     trustBar: trustBarSection,
-    bestSellers: bestSellersSection,
+    bestSellers: null,
     newArrivals: newArrivalsSection,
     testimonials: testimonialsSection,
   };

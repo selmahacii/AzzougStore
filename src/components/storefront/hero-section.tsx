@@ -663,8 +663,13 @@ export function HeroSection() {
     setStorefrontView('shop');
   };
   const onScroll = () => {
-    const el = document.getElementById('best-sellers');
-    el?.scrollIntoView({ behavior: 'smooth' });
+    const el = document.getElementById('new-arrivals') || document.getElementById('testimonials');
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth' });
+    } else {
+      setSelectedCategory(null);
+      setStorefrontView('shop');
+    }
   };
 
   const tpl = resolveTemplate(activeStore.template_id);
