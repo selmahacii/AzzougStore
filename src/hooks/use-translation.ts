@@ -92,7 +92,7 @@ const translations = {
     reviews: 'avis vérifiés',
     customerReviews: 'Avis de nos clients',
     faqTitle: 'Questions Fréquentes',
-    buyNow: 'Commander',
+    buyNow: 'Commander maintenant',
     chooseOption: 'Choisissez votre option',
     chooseQuantity: 'Sélectionnez la quantité',
     piece: 'Pièce',
@@ -116,7 +116,7 @@ const translations = {
     confirmTitle: 'Pour confirmer, veuillez saisir vos informations :',
     
     // Product Detail
-    addToCart: 'Commander maintenant',
+    addToCart: 'Ajouter au panier',
     description: 'Description',
     specification: 'Spécifications',
     reviewsTab: 'Avis',
@@ -294,7 +294,7 @@ const translations = {
     reviews: 'verified reviews',
     customerReviews: 'Customer Reviews',
     faqTitle: 'Frequently Asked Questions',
-    buyNow: 'Order Now',
+    buyNow: 'Order now',
     chooseOption: 'Choose your option',
     chooseQuantity: 'Select quantity',
     piece: 'Piece',
@@ -318,7 +318,7 @@ const translations = {
     confirmTitle: 'Please enter your info below to confirm:',
     
     // Product Detail
-    addToCart: 'Order now',
+    addToCart: 'Add to cart',
     description: 'Description',
     specification: 'Specifications',
     reviewsTab: 'Reviews',
@@ -520,7 +520,7 @@ const translations = {
     confirmTitle: 'للتأكيد يرجى إدخال معلوماتك هنا :',
     
     // Product Detail
-    addToCart: 'اطلب الآن',
+    addToCart: 'أضف إلى السلة',
     description: 'الوصف',
     specification: 'المواصفات',
     reviewsTab: 'التقييمات',

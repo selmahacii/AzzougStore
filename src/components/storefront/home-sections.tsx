@@ -188,6 +188,7 @@ export function HomeSections() {
                   useAppStore.getState().setStorefrontView('product'); 
                 }}
                 onAddToCart={(p) => { addItem(p, 1); openCart(); }}
+                onBuyNow={(p) => { addItem(p, 1); useAppStore.getState().setStorefrontView('checkout'); }}
               />
             ))}
           </div>
@@ -285,6 +286,7 @@ export function HomeSections() {
                     useAppStore.getState().setStorefrontView('product'); 
                   }}
                   onAddToCart={(p) => { addItem(p, 1); openCart(); }}
+                  onBuyNow={(p) => { addItem(p, 1); useAppStore.getState().setStorefrontView('checkout'); }}
                 />
               ))}
             </div>

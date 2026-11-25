@@ -312,6 +312,7 @@ function useProductDetailData() {
       }
     });
     if (added) {
+      useCartStore.getState().closeCart();
       setStorefrontView('checkout');
     } else {
       toast.error('Veuillez sélectionner au moins une quantité');
@@ -331,7 +332,7 @@ function useProductDetailData() {
     addedToCart, activeImage, setActiveImage, setActiveVariantImage,
     allImages, discount,
     handleAddToCart, handleBuyNow, handleToggleWishlist, handleBack,
-    isInWishlist, addItem, openCart, setSelectedProductSlug,
+    isInWishlist, addItem, openCart, setSelectedProductSlug, setStorefrontView,
   };
 }
 
@@ -677,17 +678,29 @@ function CleanDetail() {
                     </div>
                   </div>
 
-                  {/* Single High-Conversion Square CTA Button */}
-                  <div className="pt-2">
+                  {/* High-Conversion Direct Checkout + Cart Icon Button */}
+                  <div className="pt-2 flex items-center gap-2.5 sm:gap-3">
                     {!isOOS ? (
-                      <button 
-                        onClick={d.handleBuyNow}
-                        className="w-full h-14 rounded-none flex items-center justify-center gap-2.5 text-sm sm:text-base font-black uppercase tracking-wider text-white shadow-md transition-all hover:opacity-95 active:scale-[0.98] cursor-pointer bg-[#0F172A] hover:bg-[#1E293B]"
-                        style={primary && primary !== '#4b7bec' ? { backgroundColor: primary } : undefined}
-                      >
-                        <Zap className="size-4.5 fill-current" />
-                        <span>Commander maintenant</span>
-                      </button>
+                      <>
+                        <button 
+                          type="button"
+                          onClick={d.handleBuyNow}
+                          className="flex-1 h-14 rounded-none flex items-center justify-center gap-2.5 text-xs sm:text-sm md:text-base font-black uppercase tracking-wider text-white shadow-md transition-all hover:opacity-95 active:scale-[0.98] cursor-pointer bg-[#0F172A] hover:bg-[#1E293B]"
+                          style={primary && primary !== '#4b7bec' ? { backgroundColor: primary } : undefined}
+                          title="Commander directement"
+                        >
+                          <Zap className="size-4.5 fill-current" />
+                          <span>Commander maintenant</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={d.handleAddToCart}
+                          title="Ajouter au panier"
+                          className="size-14 shrink-0 rounded-none border-2 border-slate-900 bg-white hover:bg-slate-50 text-slate-900 transition-all active:scale-[0.98] cursor-pointer flex items-center justify-center shadow-sm"
+                        >
+                          {d.addedToCart ? <CheckCircle className="size-5.5 text-emerald-600" /> : <ShoppingCart className="size-5.5" />}
+                        </button>
+                      </>
                     ) : (
                       <div className="w-full h-14 rounded-none flex items-center justify-center text-xs font-black uppercase tracking-wider text-slate-400 bg-slate-100 border border-slate-200">
                         Rupture de stock
@@ -755,6 +768,7 @@ function CleanDetail() {
                     window.scrollTo({ top: 0, behavior: 'smooth' }); 
                   }}
                   onAddToCart={(pr) => { d.addItem(pr, 1); d.openCart(); }}
+                  onBuyNow={(pr) => { d.addItem(pr, 1); d.setStorefrontView('checkout'); }}
                 />
               ))}
             </div>
@@ -965,17 +979,18 @@ function AthleticDetail() {
               </div>
             </div>
               {!isOOS ? (
-                <>
+                <div className="flex items-center gap-2.5">
                   <button onClick={d.handleBuyNow}
-                    className="w-full h-14 text-[11px] font-black uppercase tracking-[0.3em] text-black transition-all hover:brightness-110 active:scale-[0.98]"
+                    className="flex-1 h-14 text-[11px] font-black uppercase tracking-[0.3em] text-black transition-all hover:brightness-110 active:scale-[0.98] flex items-center justify-center gap-2"
                     style={{ backgroundColor: primary }}>
-                    {t('buyNow')}
+                    <Zap className="size-4 fill-current" />
+                    <span>{t('buyNow')}</span>
                   </button>
-                  <button disabled={isOOS} onClick={d.handleAddToCart}
-                    className="w-full h-12 text-[10px] font-black uppercase tracking-[0.3em] text-white/60 border border-white/10 hover:border-white/30 hover:text-white transition-all active:scale-[0.98]">
-                    {d.addedToCart ? <><CheckCircle className="size-3.5 inline mr-1" />{t('added')}</> : t('addToCart')}
+                  <button disabled={isOOS} onClick={d.handleAddToCart} title={t('addToCart')}
+                    className="size-14 shrink-0 flex items-center justify-center text-white border border-white/20 hover:border-white/60 hover:bg-white/10 transition-all active:scale-[0.98]">
+                    {d.addedToCart ? <CheckCircle className="size-5 text-emerald-400" /> : <ShoppingCart className="size-5" />}
                   </button>
-                </>
+                </div>
               ) : (
                 <div className="w-full h-14 flex items-center justify-center text-[10px] font-black uppercase tracking-[0.3em] text-white/20 border border-white/5">
                   {t('outOfStock')}
@@ -1004,7 +1019,8 @@ function AthleticDetail() {
               {d.relatedProducts.map((rp) => (
                 <ProductCard key={rp.id} product={rp}
                   onQuickView={(slug) => { d.setSelectedProductSlug(slug); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
-                  onAddToCart={(pr) => { d.addItem(pr, 1); d.openCart(); }}/>
+                  onAddToCart={(pr) => { d.addItem(pr, 1); d.openCart(); }}
+                  onBuyNow={(pr) => { d.addItem(pr, 1); d.setStorefrontView('checkout'); }}/>
               ))}
             </div>
           </section>
@@ -1217,17 +1233,18 @@ function LuxeDetail() {
               </div>
             </div>
               {!isOOS ? (
-                <>
+                <div className="flex items-center gap-3">
                   <button onClick={d.handleBuyNow}
-                    className="w-full h-14 text-[10px] tracking-[0.35em] uppercase font-light text-black transition-all hover:brightness-95"
+                    className="flex-1 h-14 text-[10px] tracking-[0.35em] uppercase font-light text-black transition-all hover:brightness-95 flex items-center justify-center gap-2"
                     style={{ backgroundColor: primary }}>
-                    {t('buyNow')}
+                    <Zap className="size-3.5 fill-current" />
+                    <span>{t('buyNow')}</span>
                   </button>
-                  <button disabled={isOOS} onClick={d.handleAddToCart}
-                    className="w-full h-12 text-[10px] tracking-[0.25em] uppercase font-light text-white/40 border border-white/10 hover:border-white/20 hover:text-white/70 transition-all">
-                    {d.addedToCart ? <><CheckCircle className="size-3 inline mr-1" />{t('added')}</> : t('addToCart')}
+                  <button disabled={isOOS} onClick={d.handleAddToCart} title={t('addToCart')}
+                    className="size-14 shrink-0 flex items-center justify-center text-white/70 border border-white/20 hover:border-white/50 hover:text-white transition-all">
+                    {d.addedToCart ? <CheckCircle className="size-5 text-emerald-400" /> : <ShoppingCart className="size-5" />}
                   </button>
-                </>
+                </div>
               ) : (
                 <div className="w-full h-14 flex items-center justify-center text-[9px] tracking-[0.35em] uppercase text-white/15 border border-white/5">{t('outOfStock')}</div>
               )}
@@ -1257,7 +1274,8 @@ function LuxeDetail() {
               {d.relatedProducts.map((rp) => (
                 <ProductCard key={rp.id} product={rp}
                   onQuickView={(slug) => { d.setSelectedProductSlug(slug); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
-                  onAddToCart={(pr) => { d.addItem(pr, 1); d.openCart(); }}/>
+                  onAddToCart={(pr) => { d.addItem(pr, 1); d.openCart(); }}
+                  onBuyNow={(pr) => { d.addItem(pr, 1); d.setStorefrontView('checkout'); }}/>
               ))}
             </div>
           </section>

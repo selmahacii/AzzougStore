@@ -308,6 +308,7 @@ function CleanGrid({ storeId, primary, setStorefrontView }: { storeId: string; p
                       setStorefrontView('product'); 
                     }}
                     onAddToCart={(p) => { addItem(p, 1); openCart(); }}
+                    onBuyNow={(p) => { addItem(p, 1); setStorefrontView('checkout'); }}
                   />
                 ))}
               </div>
@@ -526,7 +527,8 @@ function AthleticGrid({ storeId, primary, setStorefrontView }: { storeId: string
                   <div key={p.id} className="bg-[#0A0A0A]">
                     <ProductCard product={p}
                       onQuickView={slug => setSelectedProductSlug(slug)}
-                      onAddToCart={p => { addItem(p, 1); openCart(); }} />
+                      onAddToCart={p => { addItem(p, 1); openCart(); }}
+                      onBuyNow={p => { addItem(p, 1); setStorefrontView('checkout'); }} />
                   </div>
                 ))}
               </AnimatePresence>
@@ -618,7 +620,8 @@ function LuxeGrid({ storeId, primary, setStorefrontView }: { storeId: string; pr
                 {d.products.map(p => (
                   <ProductCard key={p.id} product={p}
                     onQuickView={slug => setSelectedProductSlug(slug)}
-                    onAddToCart={p => { addItem(p, 1); openCart(); }} />
+                    onAddToCart={p => { addItem(p, 1); openCart(); }}
+                    onBuyNow={p => { addItem(p, 1); setStorefrontView('checkout'); }} />
                 ))}
               </AnimatePresence>
             </div>
