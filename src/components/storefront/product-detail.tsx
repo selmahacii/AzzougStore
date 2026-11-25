@@ -273,7 +273,7 @@ function useProductDetailData() {
     return Math.round(((product.compare_price - product.price) / product.compare_price) * 100);
   }, [product]);
 
-  const updateSelection = (key: string, field: 'quantity' | 'notes', value: any) => {
+  const updateSelection = useCallback((key: string, field: 'quantity' | 'notes', value: any) => {
     setSelections(prev => ({
       ...prev,
       [key]: {
@@ -281,7 +281,7 @@ function useProductDetailData() {
         [field]: value
       }
     }));
-  };
+  }, []);
 
   const handleAddToCart = () => {
     if (!product) return;
@@ -336,6 +336,169 @@ function useProductDetailData() {
   };
 }
 
+function useMultiVariantSelection(
+  variants: Product['variants'] | undefined,
+  updateSelection: (key: string, field: 'quantity' | 'notes', value: any) => void,
+  setActiveVariantImage: (img: string | undefined) => void
+) {
+  const [activeVariantVal, setActiveVariantVal] = useState<string>('');
+  const [quantity, setQuantity] = useState(1);
+  const [slotVariants, setSlotVariants] = useState<string[]>([]);
+
+  const syncSelections = useCallback((slots: string[], allVariants: NonNullable<Product['variants']>) => {
+    const counts: Record<string, number> = {};
+    slots.forEach((val) => {
+      counts[val] = (counts[val] || 0) + 1;
+    });
+    allVariants.forEach((v) => {
+      updateSelection(v.value, 'quantity', counts[v.value] || 0);
+    });
+  }, [updateSelection]);
+
+  useEffect(() => {
+    if (variants && variants.length > 0) {
+      const firstVal = variants[0].value;
+      setActiveVariantVal(firstVal);
+      setQuantity(1);
+      setSlotVariants([firstVal]);
+      variants.forEach((v) => {
+        updateSelection(v.value, 'quantity', v.value === firstVal ? 1 : 0);
+      });
+      const firstImg = variants[0].image || (variants[0] as any)?.image_url || (variants[0] as any)?.imageUrl;
+      if (firstImg) setActiveVariantImage(firstImg);
+    } else {
+      setQuantity(1);
+      setSlotVariants([]);
+      updateSelection('default', 'quantity', 1);
+    }
+  }, [variants, setActiveVariantImage, updateSelection]);
+
+  const handleSelectVariant = (val: string) => {
+    setActiveVariantVal(val);
+    if (variants && variants.length > 0) {
+      const nextSlots = slotVariants.length > 0
+        ? slotVariants.map((s, idx) => (idx === 0 ? val : s))
+        : Array(quantity).fill(val);
+      setSlotVariants(nextSlots);
+      syncSelections(nextSlots, variants);
+      const vObj = variants.find((x) => x.value === val);
+      const vImg = vObj?.image || (vObj as any)?.image_url || (vObj as any)?.imageUrl || (vObj as any)?.photo || (vObj as any)?.img;
+      if (vImg) setActiveVariantImage(vImg);
+    }
+  };
+
+  const handleSlotVariantChange = (slotIndex: number, val: string) => {
+    setActiveVariantVal(val);
+    if (variants && variants.length > 0) {
+      const nextSlots = [...slotVariants];
+      nextSlots[slotIndex] = val;
+      setSlotVariants(nextSlots);
+      syncSelections(nextSlots, variants);
+      const vObj = variants.find((x) => x.value === val);
+      const vImg = vObj?.image || (vObj as any)?.image_url || (vObj as any)?.imageUrl || (vObj as any)?.photo || (vObj as any)?.img;
+      if (vImg) setActiveVariantImage(vImg);
+    }
+  };
+
+  const handleQuantityChange = (newQty: number) => {
+    const safeQty = Math.max(1, newQty);
+    setQuantity(safeQty);
+    if (variants && variants.length > 0) {
+      const fallback = activeVariantVal || variants[0].value;
+      let nextSlots = [...slotVariants];
+      if (nextSlots.length < safeQty) {
+        while (nextSlots.length < safeQty) {
+          nextSlots.push(fallback);
+        }
+      } else if (nextSlots.length > safeQty) {
+        nextSlots = nextSlots.slice(0, safeQty);
+      }
+      setSlotVariants(nextSlots);
+      syncSelections(nextSlots, variants);
+    } else {
+      updateSelection('default', 'quantity', safeQty);
+    }
+  };
+
+  return {
+    activeVariantVal,
+    quantity,
+    slotVariants,
+    handleSelectVariant,
+    handleSlotVariantChange,
+    handleQuantityChange,
+  };
+}
+
+function MultiVariantSlotPicker({
+  variants,
+  slotVariants,
+  onSelectSlotVariant,
+  dark = false,
+}: {
+  variants: NonNullable<Product['variants']>;
+  slotVariants: string[];
+  onSelectSlotVariant: (slotIndex: number, val: string) => void;
+  dark?: boolean;
+}) {
+  if (slotVariants.length <= 1 || variants.length <= 1) return null;
+
+  return (
+    <div className={cn(
+      "p-3.5 border rounded-none space-y-3",
+      dark ? "bg-white/5 border-white/10" : "bg-slate-50/90 border-slate-200"
+    )}>
+      <div className="flex items-center justify-between gap-2">
+        <span className={cn(
+          "text-[10px] font-black uppercase tracking-wider",
+          dark ? "text-white/70" : "text-slate-700"
+        )}>
+          Choisissez vos variantes ({slotVariants.length} articles)
+        </span>
+      </div>
+      <div className="space-y-2.5">
+        {slotVariants.map((selectedVal, idx) => (
+          <div key={idx} className="flex flex-col sm:flex-row sm:items-center gap-2">
+            <span className={cn(
+              "text-[10px] font-extrabold uppercase tracking-wider shrink-0 w-18",
+              dark ? "text-white/50" : "text-slate-500"
+            )}>
+              Article {idx + 1} :
+            </span>
+            <div className="flex flex-wrap gap-1.5">
+              {variants.map((v) => {
+                const isSelected = selectedVal === v.value;
+                const vImg = v.image || (v as any).image_url || (v as any).imageUrl || (v as any).photo;
+                return (
+                  <button
+                    key={v.value}
+                    type="button"
+                    onClick={() => onSelectSlotVariant(idx, v.value)}
+                    className={cn(
+                      "px-2.5 py-1.5 text-[11px] font-bold rounded-none border transition-all flex items-center gap-1.5 cursor-pointer active:scale-95",
+                      isSelected
+                        ? (dark ? "bg-white text-black border-white" : "bg-slate-900 text-white border-slate-900 shadow-2xs")
+                        : (dark ? "bg-transparent text-white/60 border-white/15 hover:border-white/40" : "bg-white text-slate-700 border-slate-300 hover:border-slate-500")
+                    )}
+                    title={v.value}
+                  >
+                    {vImg ? (
+                      <img src={optimizeCloudinaryUrl(vImg, 64)} alt={v.value} className="size-4 rounded-none object-cover shrink-0" />
+                    ) : v.color ? (
+                      <span className="size-3 rounded-none border border-black/15 shrink-0" style={{ backgroundColor: v.color }} />
+                    ) : null}
+                    <span>{v.value}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 /* ─────────────────────────────── CLEAN ─────────────────────────────── */
 function CleanDetail() {
   const d = useProductDetailData();
@@ -345,50 +508,18 @@ function CleanDetail() {
   const isOOS = p ? p.stock === 0 : false;
   const { t, dir } = useTranslation();
 
-  const [activeVariantVal, setActiveVariantVal] = useState<string>('');
-  const [quantity, setQuantity] = useState(1);
+  const {
+    activeVariantVal,
+    quantity,
+    slotVariants,
+    handleSelectVariant,
+    handleSlotVariantChange,
+    handleQuantityChange,
+  } = useMultiVariantSelection(p?.variants, d.updateSelection, d.setActiveVariantImage);
 
   // Group variants
   const colorVariants = p?.variants?.filter(v => (v.name && typeof v.name === 'string' && (v.name.toLowerCase().includes('couleur') || v.name.toLowerCase().includes('color'))) || v.color) || [];
   const textVariants = p?.variants?.filter(v => !((v.name && typeof v.name === 'string' && (v.name.toLowerCase().includes('couleur') || v.name.toLowerCase().includes('color'))) || v.color)) || [];
-
-  useEffect(() => {
-    if (p?.variants && p.variants.length > 0) {
-      const firstVal = p.variants[0].value;
-      setActiveVariantVal(firstVal);
-      setQuantity(1);
-      p.variants.forEach(v => {
-        d.updateSelection(v.value, 'quantity', v.value === firstVal ? 1 : 0);
-      });
-      const firstImg = p.variants[0].image || (p.variants[0] as any)?.image_url || (p.variants[0] as any)?.imageUrl;
-      if (firstImg) {
-        d.setActiveVariantImage(firstImg);
-      }
-    } else {
-      d.updateSelection('default', 'quantity', 1);
-    }
-  }, [p?.variants, d.setActiveVariantImage]);
-
-  const handleSelectVariant = (val: string) => {
-    setActiveVariantVal(val);
-    p?.variants?.forEach(v => {
-      d.updateSelection(v.value, 'quantity', v.value === val ? quantity : 0);
-    });
-    const vObj = p?.variants?.find(x => x.value === val);
-    const vImg = vObj?.image || (vObj as any)?.image_url || (vObj as any)?.imageUrl || (vObj as any)?.photo || (vObj as any)?.img;
-    if (vImg) {
-      d.setActiveVariantImage(vImg);
-    }
-  };
-
-  const handleQuantityChange = (newQty: number) => {
-    setQuantity(newQty);
-    if (p?.variants && p.variants.length > 0) {
-      d.updateSelection(activeVariantVal, 'quantity', newQty);
-    } else {
-      d.updateSelection('default', 'quantity', newQty);
-    }
-  };
 
   if (d.loading) return (
     <div className="bg-[#F8F9FC] min-h-screen py-10 sm:py-16">
@@ -675,6 +806,14 @@ function CleanDetail() {
                     </div>
                   </div>
 
+                  {p.variants && p.variants.length > 1 && (
+                    <MultiVariantSlotPicker
+                      variants={p.variants}
+                      slotVariants={slotVariants}
+                      onSelectSlotVariant={handleSlotVariantChange}
+                    />
+                  )}
+
                   {/* High-Conversion Direct Checkout + Cart Icon Button */}
                   <div className="pt-2 flex items-center gap-2.5 sm:gap-3">
                     {!isOOS ? (
@@ -786,46 +925,18 @@ function AthleticDetail() {
   const isOOS = p ? p.stock === 0 : false;
   const { t, dir } = useTranslation();
 
-  const [activeVariantVal, setActiveVariantVal] = useState<string>('');
-  const [quantity, setQuantity] = useState(1);
+  const {
+    activeVariantVal,
+    quantity,
+    slotVariants,
+    handleSelectVariant,
+    handleSlotVariantChange,
+    handleQuantityChange,
+  } = useMultiVariantSelection(p?.variants, d.updateSelection, d.setActiveVariantImage);
 
   // Group variants
   const colorVariants = p?.variants?.filter(v => (v.name && typeof v.name === 'string' && (v.name.toLowerCase().includes('couleur') || v.name.toLowerCase().includes('color'))) || v.color) || [];
   const textVariants = p?.variants?.filter(v => !((v.name && typeof v.name === 'string' && (v.name.toLowerCase().includes('couleur') || v.name.toLowerCase().includes('color'))) || v.color)) || [];
-
-  useEffect(() => {
-    if (p?.variants && p.variants.length > 0) {
-      const firstVal = p.variants[0].value;
-      setActiveVariantVal(firstVal);
-      setQuantity(1);
-      p.variants.forEach(v => {
-        d.updateSelection(v.value, 'quantity', v.value === firstVal ? 1 : 0);
-      });
-    } else {
-      d.updateSelection('default', 'quantity', 1);
-    }
-  }, [p?.variants]);
-
-  const handleSelectVariant = (val: string) => {
-    setActiveVariantVal(val);
-    p?.variants?.forEach(v => {
-      d.updateSelection(v.value, 'quantity', v.value === val ? quantity : 0);
-    });
-    const vObj = p?.variants?.find(x => x.value === val);
-    const vImg = vObj?.image || (vObj as any)?.image_url || (vObj as any)?.imageUrl;
-    if (vImg) {
-      d.setActiveVariantImage(vImg);
-    }
-  };
-
-  const handleQuantityChange = (newQty: number) => {
-    setQuantity(newQty);
-    if (p?.variants && p.variants.length > 0) {
-      d.updateSelection(activeVariantVal, 'quantity', newQty);
-    } else {
-      d.updateSelection('default', 'quantity', newQty);
-    }
-  };
 
   if (d.loading) return (
     <div className="bg-[#0A0A0A] min-h-screen">
@@ -974,6 +1085,14 @@ function AthleticDetail() {
                   <button type="button" onClick={() => handleQuantityChange(quantity + 1)} className="size-12 flex items-center justify-center text-white/40 hover:text-white hover:bg-white/5 transition-all"><Plus className="size-3.5"/></button>
                 </div>
               </div>
+              {p.variants && p.variants.length > 1 && (
+                <MultiVariantSlotPicker
+                  variants={p.variants}
+                  slotVariants={slotVariants}
+                  onSelectSlotVariant={handleSlotVariantChange}
+                  dark
+                />
+              )}
             </div>
               {!isOOS ? (
                 <div className="flex items-center gap-2.5">
@@ -1036,46 +1155,18 @@ function LuxeDetail() {
   const isOOS = p ? p.stock === 0 : false;
   const { t, dir } = useTranslation();
 
-  const [activeVariantVal, setActiveVariantVal] = useState<string>('');
-  const [quantity, setQuantity] = useState(1);
+  const {
+    activeVariantVal,
+    quantity,
+    slotVariants,
+    handleSelectVariant,
+    handleSlotVariantChange,
+    handleQuantityChange,
+  } = useMultiVariantSelection(p?.variants, d.updateSelection, d.setActiveVariantImage);
 
   // Group variants
   const colorVariants = p?.variants?.filter(v => (v.name && typeof v.name === 'string' && (v.name.toLowerCase().includes('couleur') || v.name.toLowerCase().includes('color'))) || v.color) || [];
   const textVariants = p?.variants?.filter(v => !((v.name && typeof v.name === 'string' && (v.name.toLowerCase().includes('couleur') || v.name.toLowerCase().includes('color'))) || v.color)) || [];
-
-  useEffect(() => {
-    if (p?.variants && p.variants.length > 0) {
-      const firstVal = p.variants[0].value;
-      setActiveVariantVal(firstVal);
-      setQuantity(1);
-      p.variants.forEach(v => {
-        d.updateSelection(v.value, 'quantity', v.value === firstVal ? 1 : 0);
-      });
-    } else {
-      d.updateSelection('default', 'quantity', 1);
-    }
-  }, [p?.variants]);
-
-  const handleSelectVariant = (val: string) => {
-    setActiveVariantVal(val);
-    p?.variants?.forEach(v => {
-      d.updateSelection(v.value, 'quantity', v.value === val ? quantity : 0);
-    });
-    const vObj = p?.variants?.find(x => x.value === val);
-    const vImg = vObj?.image || (vObj as any)?.image_url || (vObj as any)?.imageUrl;
-    if (vImg) {
-      d.setActiveVariantImage(vImg);
-    }
-  };
-
-  const handleQuantityChange = (newQty: number) => {
-    setQuantity(newQty);
-    if (p?.variants && p.variants.length > 0) {
-      d.updateSelection(activeVariantVal, 'quantity', newQty);
-    } else {
-      d.updateSelection('default', 'quantity', newQty);
-    }
-  };
 
   if (d.loading) return (
     <div className="bg-[#0C0F1A] min-h-screen">
@@ -1228,6 +1319,14 @@ function LuxeDetail() {
                   <button type="button" onClick={() => handleQuantityChange(quantity + 1)} className="size-10 flex items-center justify-center text-white/20 hover:text-white/60 transition-colors"><Plus className="size-3"/></button>
                 </div>
               </div>
+              {p.variants && p.variants.length > 1 && (
+                <MultiVariantSlotPicker
+                  variants={p.variants}
+                  slotVariants={slotVariants}
+                  onSelectSlotVariant={handleSlotVariantChange}
+                  dark
+                />
+              )}
             </div>
               {!isOOS ? (
                 <div className="flex items-center gap-3">

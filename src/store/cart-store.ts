@@ -46,13 +46,18 @@ export const useCartStore = create<CartState>()(
         const existingIdx = items.findIndex((item) =>
           `${item.product.id}-${item.selectedVariant || ''}-${item.customNotes || ''}` === key
         );
+        const variantObj = variant && Array.isArray(product.variants)
+          ? product.variants.find((v: any) => v.value === variant)
+          : null;
+        const variantImage = variantObj?.image || (variantObj as any)?.image_url || (variantObj as any)?.imageUrl || (variantObj as any)?.photo;
+        const resolvedImageUrl = variantImage || product.main_image || undefined;
 
         if (existingIdx >= 0) {
           items[existingIdx] = {
             ...items[existingIdx],
             quantity: items[existingIdx].quantity + quantity,
             customPrice,
-            image_url: product.main_image || undefined,
+            image_url: resolvedImageUrl,
             sku: product.sku || undefined,
           };
         } else {
@@ -62,7 +67,7 @@ export const useCartStore = create<CartState>()(
             selectedVariant: variant, 
             customNotes, 
             customPrice,
-            image_url: product.main_image || undefined,
+            image_url: resolvedImageUrl,
             sku: product.sku || undefined,
           });
         }
