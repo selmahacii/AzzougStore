@@ -1,14 +1,24 @@
 'use client';
 
 import { useEffect, useCallback, useState } from 'react';
+import dynamic from 'next/dynamic';
 import { useAppStore } from '@/store/app-store';
 import type { Store, User } from '@/lib/types';
 import { ErrorBoundary } from '@/components/error-boundary';
 import { Button } from '@/components/ui/button';
 import { StorefrontApp } from './storefront-app';
-import { AdminApp } from './admin-app';
-import { AdminAuthPage } from '@/components/admin/admin-auth-page';
 import { ThemeInjector } from './theme-injector';
+
+// Lazy-load the heavy ERP modules only when admin view is actually active so
+// storefront SSR Lambdas and shopper browsers never parse/evaluate 1MB+ of admin JS.
+const AdminApp = dynamic(
+  () => import('./admin-app').then((m) => ({ default: m.AdminApp })),
+  { ssr: false }
+);
+const AdminAuthPage = dynamic(
+  () => import('@/components/admin/admin-auth-page').then((m) => ({ default: m.AdminAuthPage })),
+  { ssr: false }
+);
 
 export function AppBootstrap() {
   const [isReady, setIsReady] = useState(false);

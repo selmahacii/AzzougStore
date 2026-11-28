@@ -14,7 +14,7 @@ import { NextRequest, NextResponse } from 'next/server';
 // catch-all proxy (static segments win over dynamic in the App Router).
 
 export const dynamic = 'force-dynamic';
-export const runtime = 'nodejs';
+export const runtime = 'edge';
 
 const DEFAULT_GRAPH_VERSION = 'v21.0';
 

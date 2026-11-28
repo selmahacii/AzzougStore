@@ -616,34 +616,25 @@ export function HeroSection() {
 
   const [featuredProducts, setFeaturedProducts] = useState<Product[]>([]);
 
-  // Même queryKey que home-sections.tsx pour cette même requête — les deux
-  // Fusion complète avec home-sections.tsx :
-  // Utilise exactement la même queryKey et pageSize=8 que home-sections.tsx pour que React Query
-  // dédoublonne parfaitement en UN SEUL appel réseau partagé au chargement.
-  const featuredQuery = useQuery({
-    queryKey: ['store-products', activeStore?.id, 'featured', 8],
-    queryFn: () => apiFetch<{ success: boolean; data: Product[] }>(`/api/v1/products?store_id=${activeStore!.id}&pageSize=8&is_featured=true&is_active=true`),
-    enabled: !!activeStore,
-    staleTime: 5 * 60 * 1000,
-  });
-  const hasNoFeatured = featuredQuery.isSuccess && (!featuredQuery.data?.data || featuredQuery.data.data.length === 0);
-  const fallbackQuery = useQuery({
+  // Partage exactement la même requête ['store-products', activeStore?.id, 'active', 8] que home-sections.tsx
+  // afin qu'un seul appel réseau soit émis au chargement de la page d'accueil.
+  const activeQuery = useQuery({
     queryKey: ['store-products', activeStore?.id, 'active', 8],
     queryFn: () => apiFetch<{ success: boolean; data: Product[] }>(`/api/v1/products?store_id=${activeStore!.id}&pageSize=8&is_active=true`),
-    enabled: !!activeStore && hasNoFeatured,
-    staleTime: 5 * 60 * 1000,
+    enabled: !!activeStore,
+    staleTime: 10 * 60 * 1000,
   });
-  const loading = featuredQuery.isLoading || (hasNoFeatured && fallbackQuery.isLoading);
+  const loading = activeQuery.isLoading;
 
   useEffect(() => {
-    if (featuredQuery.data?.success && featuredQuery.data.data && featuredQuery.data.data.length > 0) {
-      setFeaturedProducts(featuredQuery.data.data.slice(0, 4));
-    } else if (hasNoFeatured && fallbackQuery.data?.success) {
-      setFeaturedProducts((fallbackQuery.data.data ?? []).slice(0, 4));
-    } else if (!activeStore) {
+    if (!activeStore) {
       setFeaturedProducts([]);
+      return;
     }
-  }, [activeStore, featuredQuery.data, hasNoFeatured, fallbackQuery.data]);
+    const allActive = (activeQuery.data?.data ?? []).filter((p: Product) => p.is_active !== false);
+    const explicitFeatured = allActive.filter((p: Product) => p.featured);
+    setFeaturedProducts((explicitFeatured.length > 0 ? explicitFeatured : allActive).slice(0, 4));
+  }, [activeStore, activeQuery.data]);
 
   const { t } = useTranslation();
 

@@ -105,9 +105,12 @@ export function AdminApp() {
       // Initial check
       checkLowStock();
 
-      // Check every 2 minutes — low-stock alerts don't need near-real-time
-      // polling, and this ran against the DB from every open admin tab.
-      const interval = setInterval(checkLowStock, 120000);
+      // Check every 10 minutes only when tab is visible — prevents background tabs from burning Vercel API invocations
+      const interval = setInterval(() => {
+        if (typeof document === 'undefined' || !document.hidden) {
+          checkLowStock();
+        }
+      }, 600000);
       return () => clearInterval(interval);
    }, [activeStore?.id, isAgent, isLivreur, setAdminView, setQuickAdjustProduct]);
 

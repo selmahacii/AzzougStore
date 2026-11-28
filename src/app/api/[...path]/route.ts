@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { revalidateTag } from 'next/cache';
 import { getBackendUrl } from '@/lib/utils';
 
 export const dynamic = 'force-dynamic';
@@ -39,8 +40,32 @@ function setCachedResponse(key: string, entry: CacheEntry) {
   memoryCache.set(key, entry);
 }
 
-function clearCacheForMutations() {
-  memoryCache.clear();
+function invalidateMemoryCachePrefix(prefixes: string[]) {
+  for (const key of memoryCache.keys()) {
+    if (prefixes.some((prefix) => key.startsWith(prefix))) {
+      memoryCache.delete(key);
+    }
+  }
+}
+
+function handleResourceMutation(subPath: string) {
+  if (subPath.startsWith('v1/products')) {
+    invalidateMemoryCachePrefix(['v1/products']);
+    try { revalidateTag('products'); } catch {}
+  } else if (subPath.startsWith('v1/stores')) {
+    invalidateMemoryCachePrefix(['v1/stores']);
+    try { revalidateTag('stores'); } catch {}
+  } else if (subPath.startsWith('v1/reviews')) {
+    invalidateMemoryCachePrefix(['v1/reviews']);
+  } else if (subPath.startsWith('v1/landing-pages')) {
+    invalidateMemoryCachePrefix(['v1/landing-pages']);
+    try { revalidateTag('landing-pages'); } catch {}
+  } else if (subPath.startsWith('v1/delivery-partners')) {
+    invalidateMemoryCachePrefix(['v1/delivery-partners']);
+  } else if (subPath.startsWith('v1/meta-ads') && !subPath.startsWith('v1/meta-ads/events')) {
+    invalidateMemoryCachePrefix(['v1/meta-ads/public-config']);
+    try { revalidateTag('meta-config'); } catch {}
+  }
 }
 
 export async function GET(request: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {
@@ -79,11 +104,19 @@ async function handleProxy(request: NextRequest, { path }: { path: string[] }) {
     const searchParams = request.nextUrl.searchParams.toString();
     const targetUrl = `${BACKEND_URL}/api/${subPath}${searchParams ? `?${searchParams}` : ''}`;
 
-    // Fast-path in-memory cache for anonymous public GET endpoints (products, stores, reviews)
-    const isPublicCacheable = 
+    // Fast-path in-memory cache for anonymous public GET endpoints
+    const isPublicCacheable =
       request.method === 'GET' &&
       !request.cookies.get('__session') &&
-      (subPath.startsWith('v1/products') || subPath.startsWith('v1/stores') || subPath.startsWith('v1/reviews'));
+      (
+        subPath.startsWith('v1/products') ||
+        subPath.startsWith('v1/stores') ||
+        subPath.startsWith('v1/reviews') ||
+        subPath.startsWith('v1/delivery-partners/availability') ||
+        subPath.startsWith('v1/delivery-partners/calculate') ||
+        subPath.startsWith('v1/meta-ads/public-config') ||
+        subPath.startsWith('v1/landing-pages/slug')
+      );
 
     const cacheKey = `${subPath}?${searchParams}`;
     if (isPublicCacheable) {
@@ -99,9 +132,10 @@ async function handleProxy(request: NextRequest, { path }: { path: string[] }) {
       }
     }
 
-    // Invalidate cache immediately on any mutation method
-    if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(request.method)) {
-      clearCacheForMutations();
+    // Only invalidate caches relevant to the mutated resource (never wipe product/store caches on tracking POSTs)
+    const isMutation = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(request.method);
+    if (isMutation) {
+      handleResourceMutation(subPath);
     }
 
     // Filter headers to only pass essential ones, stripping Host/Origin/Referer
@@ -209,20 +243,22 @@ async function handleProxy(request: NextRequest, { path }: { path: string[] }) {
     } else if (request.method === 'GET' && response.ok && !resHeaders.has('set-cookie')) {
       const hasSession = !!request.cookies.get('__session');
       if (subPath === 'v1/reviews' || subPath.startsWith('v1/reviews')) {
-        // Public reviews list — no current_user dependency in the backend, never personalized.
-        resHeaders.set('Cache-Control', 'public, max-age=30, s-maxage=60, stale-while-revalidate=300');
+        resHeaders.set('Cache-Control', 'public, max-age=60, s-maxage=300, stale-while-revalidate=1800');
       } else if (subPath === 'v1/stores/lookup/domain') {
-        // Pure domain→store lookup, no auth dependency at all.
-        resHeaders.set('Cache-Control', 'public, max-age=60, s-maxage=120, stale-while-revalidate=600');
+        resHeaders.set('Cache-Control', 'public, max-age=120, s-maxage=600, stale-while-revalidate=3600');
+      } else if (
+        subPath === 'v1/delivery-partners/availability' ||
+        subPath === 'v1/delivery-partners/calculate' ||
+        subPath === 'v1/meta-ads/public-config'
+      ) {
+        resHeaders.set('Cache-Control', 'public, max-age=60, s-maxage=300, stale-while-revalidate=1800');
       } else if (
         !hasSession &&
         (subPath === 'v1/products' || subPath.startsWith('v1/products/') || subPath === 'v1/products/categories')
       ) {
-        // Product list/detail widens for staff (draft/inactive items) — cache anonymous requests in browser and CDN.
-        resHeaders.set('Cache-Control', 'public, max-age=15, s-maxage=60, stale-while-revalidate=300');
+        resHeaders.set('Cache-Control', 'public, max-age=30, s-maxage=300, stale-while-revalidate=1800');
       } else if (!hasSession && subPath === 'v1/stores') {
-        // Store list is scoped per staff role — cache anonymous requests.
-        resHeaders.set('Cache-Control', 'public, max-age=30, s-maxage=120, stale-while-revalidate=600');
+        resHeaders.set('Cache-Control', 'public, max-age=60, s-maxage=300, stale-while-revalidate=3600');
       }
     }
 
@@ -230,7 +266,11 @@ async function handleProxy(request: NextRequest, { path }: { path: string[] }) {
 
     // Store in-memory cache for fast-path retrieval on subsequent hits
     if (isPublicCacheable && response.ok && !resHeaders.has('set-cookie')) {
-      const ttl = subPath.startsWith('v1/stores') ? 60000 : 30000;
+      const ttl = (
+        subPath.startsWith('v1/stores') ||
+        subPath.startsWith('v1/delivery-partners') ||
+        subPath.startsWith('v1/meta-ads/public-config')
+      ) ? 120000 : 60000;
       const headerPairs: [string, string][] = [];
       resHeaders.forEach((val, key) => headerPairs.push([key, val]));
       setCachedResponse(cacheKey, {

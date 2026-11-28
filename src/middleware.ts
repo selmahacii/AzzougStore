@@ -148,11 +148,21 @@ export async function middleware(request: NextRequest) {
         !pathname.startsWith(`/${storeMatch.storeSlug}`)
       ) {
         if (pathname.startsWith('/lp/')) {
-          const lpSlug = pathname.replace('/lp/', '');
-          const newUrl = new URL(`/lp/${lpSlug}`, request.url);
-          newUrl.searchParams.set('store_id', storeMatch.storeId);
-          newUrl.searchParams.set('store', storeMatch.storeSlug);
-          return NextResponse.rewrite(newUrl, { headers: response.headers });
+          const lpSlug = pathname.slice(4).replace(/\/+$/, '');
+          if (lpSlug && !lpSlug.includes('/')) {
+            return NextResponse.rewrite(
+              new URL(`/lp/${storeMatch.storeSlug}/${encodeURIComponent(lpSlug)}`, request.url),
+              { headers: response.headers },
+            );
+          }
+        }
+
+        const productSlug = request.nextUrl.searchParams.get('product');
+        if ((pathname === '/' || pathname === '') && productSlug && !productSlug.includes('/')) {
+          return NextResponse.rewrite(
+            new URL(`/${storeMatch.storeSlug}/p/${encodeURIComponent(productSlug)}`, request.url),
+            { headers: response.headers },
+          );
         }
 
         return NextResponse.rewrite(
@@ -211,6 +221,6 @@ export const config = {
   matcher: [
     '/api/v1/:path*',
     '/api/auth/:path*',
-    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+    '/((?!_next/static|_next/image|favicon\\.ico|robots\\.txt|sitemap\\.xml|manifest\\.json|.*\\.(?:svg|png|jpg|jpeg|gif|webp|avif|ico|css|js|map|woff|woff2|ttf|eot|txt|xml|json|mp4|webm|pdf)$).*)',
   ],
 };

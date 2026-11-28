@@ -44,7 +44,7 @@ export default function FunnelTrackingDashboard() {
    const { data, isLoading, isFetching } = useQuery({
       queryKey: ['funnel_diagnostics'],
       queryFn: () => apiFetch<{ success: boolean; data: any }>('/api/v1/meta-ads/funnel/diagnostics'),
-      refetchInterval: 60000,
+      refetchInterval: 300000,
       refetchIntervalInBackground: false,
       refetchOnWindowFocus: false,
    });

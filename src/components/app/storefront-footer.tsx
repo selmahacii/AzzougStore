@@ -134,7 +134,7 @@ export function StorefrontFooter() {
     queryKey: ['store-categories', activeStore?.id],
     queryFn: () => apiFetch<{ categories?: string[] }>(`/api/v1/products?store_id=${activeStore!.id}&pageSize=1&is_active=true&include_categories=true`),
     enabled: !!activeStore?.id,
-    staleTime: 5 * 60 * 1000,
+    staleTime: 10 * 60 * 1000,
   });
   useEffect(() => {
     if (categoriesData?.categories && categoriesData.categories.length > 0) {

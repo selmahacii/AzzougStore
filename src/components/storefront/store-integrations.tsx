@@ -1,14 +1,14 @@
 'use client';
 
-import { useEffect } from 'react';
-import { usePathname, useSearchParams } from 'next/navigation';
+import { useEffect, useRef } from 'react';
+import { usePathname } from 'next/navigation';
 import { setMetaPixelId, trackMetaEvent } from '@/lib/meta-tracking';
 import { captureAttribution } from '@/lib/attribution';
 
 export function StorefrontIntegrations({ config, lpId }: { config: any, lpId?: string }) {
   const pixelId = config?.pixel_id;
   const pathname = usePathname();
-  const searchParams = useSearchParams();
+  const trackedKeyRef = useRef<string | null>(null);
 
   let domainContent = config?.domain_verification_tag;
   if (domainContent && domainContent.includes('content="')) {
@@ -19,6 +19,10 @@ export function StorefrontIntegrations({ config, lpId }: { config: any, lpId?: s
   useEffect(() => {
     if (typeof window === 'undefined') return;
     if (!config?.store_id) return;
+
+    const visitKey = `${config.store_id}:${pathname}:${lpId || ''}`;
+    if (trackedKeyRef.current === visitKey) return;
+    trackedKeyRef.current = visitKey;
     
     captureAttribution();
     setMetaPixelId(pixelId, config?.store_id, config?.currency, config?.exchange_rate);
@@ -49,7 +53,7 @@ export function StorefrontIntegrations({ config, lpId }: { config: any, lpId?: s
     };
 
     void initialize();
-  }, [config?.pixel_id, config?.store_id, pathname, searchParams]);
+  }, [pixelId, config?.store_id, config?.currency, config?.exchange_rate, pathname, lpId]);
 
   return (
     <>

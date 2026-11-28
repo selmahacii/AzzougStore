@@ -444,7 +444,7 @@ function MonitorView() {
       queryKey: ['stock-dashboard', activeStore?.id],
       queryFn: () => apiFetch<{ success: boolean; data: any }>(`/api/v1/stock/dashboard?store_id=${activeStore?.id}`),
       enabled: !!activeStore?.id,
-      refetchInterval: 60000,
+      refetchInterval: 300000,
       refetchIntervalInBackground: false,
    });
 

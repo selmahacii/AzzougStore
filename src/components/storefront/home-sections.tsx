@@ -35,49 +35,39 @@ export function HomeSections() {
   const [loading, setLoading] = useState(true);
   const [apiReviews, setApiReviews] = useState<any[]>([]);
 
-  // Mêmes clés que hero-section.tsx pour ces deux mêmes requêtes — les deux
-  // composants sont montés simultanément sur la page d'accueil et
-  // demandaient chacun leur propre fetch() brut (donc sans cache/
-  // dédoublonnage) pour les MÊMES produits vedettes, confirmé en réseau
-  // (deux appels identiques par chargement de page). React Query fusionne
-  // les useQuery de même clé en un seul appel réseau partagé.
-  const featuredQuery = useQuery({
-    queryKey: ['store-products', activeStore?.id, 'featured', 8],
-    queryFn: () => apiFetch<{ success: boolean; data: Product[] }>(`/api/v1/products?store_id=${activeStore!.id}&pageSize=8&is_featured=true&is_active=true`),
-    enabled: !!activeStore,
-    staleTime: 5 * 60 * 1000,
-  });
+  // Une seule requête partagée avec hero-section.tsx (bestSellers retiré de l'accueil).
   const activeQuery = useQuery({
     queryKey: ['store-products', activeStore?.id, 'active', 8],
     queryFn: () => apiFetch<{ success: boolean; data: Product[] }>(`/api/v1/products?store_id=${activeStore!.id}&pageSize=8&is_active=true`),
     enabled: !!activeStore,
-    staleTime: 5 * 60 * 1000,
+    staleTime: 10 * 60 * 1000,
   });
+
+  const reviewsQuery = useQuery({
+    queryKey: ['store-reviews', activeStore?.id, 6],
+    queryFn: () => apiFetch<{ reviews?: any[] }>(`/api/v1/reviews?store_id=${activeStore!.id}&pageSize=6&approved=true`),
+    enabled: !!activeStore,
+    staleTime: 10 * 60 * 1000,
+  });
+
   useEffect(() => {
     if (!activeStore) return;
-    if (featuredQuery.isLoading || activeQuery.isLoading) { setLoading(true); return; }
-    const f = featuredQuery.data;
-    const n = activeQuery.data;
-    const allActive = (n?.data ?? []).filter((p: Product) => p.is_active !== false);
-    const explicitFeatured = (f?.data ?? []).filter((p: Product) => p.is_active !== false);
-    
-    // Featured / Best sellers
-    const featuredData = explicitFeatured.length > 0 ? explicitFeatured : allActive.slice(0, 4);
-    setFeatured(featuredData);
-
-    // New arrivals: take the subsequent active products, or fallback to all active products so both sections display products
+    if (activeQuery.isLoading) { setLoading(true); return; }
+    const allActive = (activeQuery.data?.data ?? []).filter((p: Product) => p.is_active !== false);
+    const featuredData = allActive.filter((p: Product) => p.featured);
+    setFeatured(featuredData.length > 0 ? featuredData : allActive.slice(0, 4));
     const remaining = allActive.length > 4 ? allActive.slice(4) : allActive;
-    setNewArrivals(remaining.length > 0 ? remaining : (explicitFeatured.length > 0 ? allActive : []));
+    setNewArrivals(remaining.length > 0 ? remaining : allActive);
     setLoading(false);
-  }, [activeStore, featuredQuery.data, featuredQuery.isLoading, activeQuery.data, activeQuery.isLoading]);
+  }, [activeStore, activeQuery.data, activeQuery.isLoading]);
 
   useEffect(() => {
-    if (!activeStore) return;
-    fetch(`/api/v1/reviews?store_id=${activeStore.id}&pageSize=6&approved=true`)
-      .then(r => r.json())
-      .then(j => { if (j.reviews?.length) setApiReviews(j.reviews); })
-      .catch(() => {});
-  }, [activeStore]);
+    if (reviewsQuery.data?.reviews?.length) {
+      setApiReviews(reviewsQuery.data.reviews);
+    } else if (reviewsQuery.isSuccess) {
+      setApiReviews([]);
+    }
+  }, [reviewsQuery.data, reviewsQuery.isSuccess]);
 
   const categories = Array.from(new Set(featured.map(p => p.category?.trim()).filter(Boolean))).slice(0, 3);
 

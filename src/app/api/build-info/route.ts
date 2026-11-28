@@ -12,6 +12,8 @@
  */
 import { NextResponse } from 'next/server';
 
+export const runtime = 'edge';
+
 // Fallback for local dev (not deployed via git) — stable for the life of
 // this server process, so it won't cause false-positive refresh prompts.
 const FALLBACK_BUILD_ID = String(Date.now());
